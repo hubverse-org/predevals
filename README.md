@@ -39,7 +39,7 @@ We use [webpack](https://webpack.js.org/) to package up all dependencies into a 
 npm run build
 ```
 
-You'll then need to commit and push your updates (including `dist/preeval.bundle.js`) to GitHub.
+You'll then need to commit and push your updates (including `dist/predeval.bundle.js`) to GitHub.
 
 ### Creating a release
 
