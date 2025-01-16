@@ -88,7 +88,7 @@ function _createUIElements($componentDiv) {
     const $displayTabPanes = $('<div class="tab-content"></div>');
     const $tableTabPane = $('<div class="tab-pane active" id="predeval_table_pane" role="tabpanel" aria-labelledby="predeval_table_tab" tabindex="0"></div>');
     const $plotTabPane = $('<div class="tab-pane" id="predeval_plot_pane" role="tabpanel" aria-labelledby="predeval_plot_tab" tabindex="0"></div>')
-        .append($('<div id="predeval_plotly_div" style="width: 100%; height: 85vh; position: relative;"></div>'));
+        .append($('<div id="predeval_plotly_div" style="width: 100%; height: 75vh; position: relative;"></div>'));
     $displayTabPanes.append($tableTabPane, $plotTabPane);
 
     // add tabs and panes to $evalDiv
@@ -650,7 +650,8 @@ const App = {
                 ticktext: this.state.xaxis_tickvals,
                 categoryorder: 'array',
                 categoryarray: this.state.xaxis_tickvals,
-                fixedrange: false
+                fixedrange: false,
+                automargin: true
             },
             yaxis: {
                 title: {text: score_col_name_to_text(this.state.selected_metric), hoverformat: '.2f'},
