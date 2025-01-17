@@ -6,10 +6,10 @@ module.exports = {
     },
     mode: 'production',
     entry: [ // order is crucial
-        './src/predeval.js',
+        './src/predevals.js',
     ],
     output: {
-        filename: 'predeval.bundle.js',
+        filename: 'predevals.bundle.js',
         path: path.resolve(__dirname, 'dist'),
         library: {
             type: 'module',  // apparently experimental
