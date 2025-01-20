@@ -2,8 +2,6 @@
  * predeval: A JavaScript (ES6 ECMAScript) module for viewing forecast evaluations.
  */
 
-// import {closestYear} from "./utils.js";
-// import _validateOptions from './validation.js';
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 
@@ -51,23 +49,50 @@ function _createUIElements($componentDiv) {
     //
     // make $optionsDiv (left column)
     //
-    const $optionsDiv = $('<div class="col-md-3 g-col-3 border-end p-4" id="predeval_options"></div>');
+    const $optionsDiv = $('<div class="col-md-3 g-col-3" id="predeval_options"></div>');
 
     // add Outcome, task ID, and Interval selects (form). NB: these are unfilled; their <OPTION>s are added by
     // initializeTargetVarsUI(), initializeTaskIDsUI(), and initializeIntervalsUI(), respectively
     const $optionsForm = $('<form></form>');
-    $optionsForm.append(_createFormRow('predeval_target', 'Target'));
-    $optionsForm.append(_createFormRow('predeval_eval_window', 'Evaluation window'));
-    $optionsForm.append(_createFormRow('predeval_disaggregate_by', 'Plot by'));
-    // $optionsForm.append(_createFormRow('predeval_plot_type', 'Plot type'));
-    $optionsForm.append(_createFormRow('predeval_metric', 'Plot metric'));
+    const $fieldsetGeneral = $('<fieldset id="predeval_options_general" class="border p-2 mb-2"></fieldset>');
+    $fieldsetGeneral.append($('<legend style="font-size: 1.2rem; margin: 0;">General Options</legend>'));
+    $fieldsetGeneral.append(_createFormRow('predeval_target', 'Target'));
+    $fieldsetGeneral.append(_createFormRow('predeval_eval_window', 'Evaluation window'));
+
+    // the fieldset for plot options is hidden by default; it is shown when the plot tab is selected
+    const $fieldsetPlot = $('<fieldset id="predeval_options_plot" class="border p-2 mb-2"></fieldset>')
+        .hide();
+    $fieldsetPlot.append($('<legend style="font-size: 1.2rem; margin: 0;">Plot Options</legend>'));
+    $fieldsetPlot.append(_createFormRow('predeval_disaggregate_by', 'Disaggregate by'));
+    $fieldsetPlot.append(_createFormRow('predeval_metric', 'Metric'));
+
+    // $fieldsetPlot.append(_createFormRow('predeval_plot_type', 'Plot type'));
+    $optionsForm.append($fieldsetGeneral, $fieldsetPlot);
     $optionsDiv.append($optionsForm);
 
     //
     // make $evalDiv (right column)
     //
     const $evalDiv = $('<div class="col-md-9 g-col-9" id="predeval_main"></div>');
-    $evalDiv.append($('<div id="predeval_plotly_div" style="width: 100%; height: 85vh; position: relative;"></div>'));
+
+    // tabs for table and plot -- these are the tabs for navigation
+    const $displayTabs = $('<ul class="nav nav-tabs" id="myTab" role="tablist"></ul>')
+        .append(
+            '<li class="nav-item" role="presentation"><button class="nav-link active" id="predeval_table_tab" data-bs-toggle="tab" data-bs-target="#predeval_table_pane" type="button" role="tab" aria-controls="home" aria-selected="true">Table</button></li>'
+        )
+        .append(
+            '<li class="nav-item" role="presentation"><button class="nav-link" id="predeval_plot_tab" data-bs-toggle="tab" data-bs-target="#predeval_plot_pane" type="button" role="tab" aria-controls="home" aria-selected="true">Plot</button></li>'
+        );
+
+    // tabs for table and plot content -- these contain the content of the tabs
+    const $displayTabPanes = $('<div class="tab-content"></div>');
+    const $tableTabPane = $('<div class="tab-pane active" id="predeval_table_pane" role="tabpanel" aria-labelledby="predeval_table_tab" tabindex="0"></div>');
+    const $plotTabPane = $('<div class="tab-pane" id="predeval_plot_pane" role="tabpanel" aria-labelledby="predeval_plot_tab" tabindex="0"></div>')
+        .append($('<div id="predeval_plotly_div" style="width: 100%; height: 75vh; position: relative;"></div>'));
+    $displayTabPanes.append($tableTabPane, $plotTabPane);
+
+    // add tabs and panes to $evalDiv
+    $evalDiv.append($displayTabs, $displayTabPanes);
 
     //
     // finish
@@ -141,7 +166,8 @@ const App = {
         // selected_plot_type: '',
 
         // 2/2 Data used to create tables or plots:
-        scores: [],
+        scores_table: [], // not disaggregated by any task id variable
+        scores_plot: [],  // disaggregated by App.State.selected_disaggregate_by
     },
 
     //
@@ -198,7 +224,7 @@ const App = {
         // set initial selected state
         this.state.selected_target = options['targets'][0].target_id;
         this.state.selected_eval_window = options['eval_windows'][0].window_name;
-        this.state.selected_disaggregate_by = '(None)';
+        this.state.selected_disaggregate_by = options['targets'][0].disaggregate_by[0];
         // this.state.selected_plot_type = 'Line plot';
         this.state.selected_metric = this.getSelectedTargetObj().metrics[0];
 
@@ -210,8 +236,8 @@ const App = {
         // wire up UI controls (event handlers)
         this.addEventHandlers();
 
-        // pull initial data (scores) and update the display to show first table
-        this.fetchDataUpdateDisplay(true);
+        // pull initial data (scores_table, scores_plot) and update the display to show first table and plot
+        this.fetchDataUpdateDisplay(true, true);
 
         return null;  // no error
     },
@@ -224,7 +250,6 @@ const App = {
         this.initializeMetricUI();
 
         // initialize plotly (right column)
-        $('#predeval_plotly_div').hide();  // hide plot
         const plotyDiv = document.getElementById('predeval_plotly_div');
         const data = []  // data will be updated by `updatePlot()`
         const layout = this.getPlotlyLayout();
@@ -244,17 +269,16 @@ const App = {
         });
     },
     initializeDisaggregateByUI() {
-        // populate the disaggregate <SELECT>
-        // this is the "Plot by" dropdown
-        const $disaggregateSelect = $("#predeval_disaggregate_by");
+        // populate the disaggregate_by <SELECT>
+        // this is the "Disaggregate by" dropdown
+        const $disaggregateBySelect = $("#predeval_disaggregate_by");
         const thisState = this.state;
         const selected_target_obj = this.getSelectedTargetObj();
-        const disaggregate_bys = ['(None)'].concat(selected_target_obj.disaggregate_by);
-        $disaggregateSelect.empty();
-        disaggregate_bys.forEach(function (by) {
+        $disaggregateBySelect.empty();
+        selected_target_obj.disaggregate_by.forEach(function (by) {
             const selected = by === thisState.selected_disaggregate_by ? 'selected' : '';
             const optionNode = `<option value="${by}" ${selected} >${by}</option>`;
-            $disaggregateSelect.append(optionNode);
+            $disaggregateBySelect.append(optionNode);
         });
     },
     initializeEvalWindowUI() {
@@ -289,50 +313,69 @@ const App = {
         // empty because we're going to re-populate it whenever the target changes
         $metricSelect.empty();
 
+        // TODO: if thisState.selecterd_metric is not in the new selected_target_obj.metrics, set it to the first metric
         selected_target_obj.metrics.forEach(function (metric) {
             const selected = metric === thisState.selected_metric ? 'selected' : '';
             const optionNode = `<option value="${metric}" ${selected} >${score_col_name_to_text(metric)}</option>`;
             $metricSelect.append(optionNode);
         });
-        // disable the metric select if disaggregate_by is '(None)', enable otherwise
-        // TODO: probably makes sense to move this to a separate function, to separate
-        // concerns of populating the UI and enabling/disabling elements
-        if (thisState.selected_disaggregate_by === '(None)') {
-            $metricSelect.prop("disabled", true);
-        } else {
-            $metricSelect.prop("disabled", false);  
-        }
     },
     addEventHandlers() {
-        // target, disaggregate by, eval_window, and metric selects
+        // user changes selection for target dropdown
         $('#predeval_target').on('change', function () {
             App.state.selected_target = this.value;
             // possible values for disaggregate_by and metrics depend on the target
             App.initializeDisaggregateByUI();
             App.initializeMetricUI();
 
-            App.fetchDataUpdateDisplay(true);
+            const isFetchFirst = true;  // fetch data before updating display
+            const isFetchBoth = true;   // fetch both table and plot data; this is a general setting change
+            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
+
+        // user changes selection for dissagregate_by dropdown
         $('#predeval_disaggregate_by').on('change', function () {
             App.state.selected_disaggregate_by = this.value;
-            // metric select is disabled if disaggregate_by is '(None)', enabled otherwise
-            // currently, this behavior is handled in initializeMetricUI()
-            App.initializeMetricUI();
 
-            App.fetchDataUpdateDisplay(true);
+            const isFetchFirst = true;  // fetch data before updating display
+            const isFetchBoth = false;   // fetch plot data only; this setting doesn't affect the table
+            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
+        
+        // user changes selection for evaluation window dropdown
         $('#predeval_eval_window').on('change', function () {
             App.state.selected_eval_window = this.value;
-            App.fetchDataUpdateDisplay(true);
+
+            const isFetchFirst = true;  // fetch data before updating display
+            const isFetchBoth = true;   // fetch both table and plot data; this is a general setting change
+            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
+
+        // user changes selection for metric dropdown
         $('#predeval_metric').on('change', function () {
             App.state.selected_metric = this.value;
-            App.fetchDataUpdateDisplay(false);
+
+            const isFetchFirst = false; // no need to fetch data, just update display based on a new column
+            const isFetchBoth = false;  // no need to fetch both table and plot data
+            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
-        // $('#predeval_display_type').on('change', function () {
-        //     App.state.selected_display_type = this.value;
-        //     App.fetchDataUpdateDisplay(false);
-        // });
+
+        // user changes selected tab (table or plot)
+        $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (event) {
+            if (event.target.id === 'predeval_plot_tab') {
+                // the plot tab has been selected
+                // call updatePlot(); the main purpose is to ensure that the
+                // plot takes up the full available width and height of its container
+                App.updatePlot();
+
+                // show the plot options fieldset
+                $('#predeval_options_plot').fadeIn();
+            } else {
+                // the table tab has been selected
+                // hide the plot options fieldset
+                $('#predeval_options_plot').fadeOut();
+            }
+        })
     },
 
     //
@@ -346,9 +389,9 @@ const App = {
      * @param isFetchCurrentTruth applies if isFetchFirst: controls whether current truth is fetched in addition to
      *   as_of truth and forecasts. ignored if not isFetchFirst
      */
-    fetchDataUpdateDisplay(isFetchFirst) {
+    fetchDataUpdateDisplay(isFetchFirst, isFetchBoth) {
         if (isFetchFirst) {
-            const promises = [this.fetchScores()];
+            const promises = [this.fetchScores(isFetchBoth)];
             console.debug(`fetchDataUpdateDisplay(${isFetchFirst}): waiting on promises`);
             Promise.all(promises).then((values) => {
                 console.debug(`fetchDataUpdateDisplay(${isFetchFirst}): Promise.all() done. updating display`, values);
@@ -359,12 +402,34 @@ const App = {
             this.updateDisplay();
         }
     },
-    fetchScores() {
-        this.state.scores = [];  // clear in case of error
+    fetchScores(isFetchBoth) {
+        // fetch scores data
+        // Any time we would need to fetch scores_table data, we also fetch scores_plot data
+        // because a general setting has been changed (e.g., target, eval_window)
+        // However, we may need to fetch scores_plot data without fetching scores_table data
+        // (e.g., when the disaggregate_by variable is changed)
+        const promises = [this.fetchScoresTableOrPlot(false)];
+        if (isFetchBoth) {
+            promises.push(this.fetchScoresTableOrPlot(true));
+        }
+        return Promise.all(promises)
+            .then(values => console.debug('fetchScores(): Promise.all() done'))
+            .catch(error => console.error(`fetchScores(): error: ${error.message}`));
+    },
+    fetchScoresTableOrPlot(isFetchScoresTable) {
+        let disaggregate_by;
+        if (isFetchScoresTable) {
+            // note: '(None)' is our conventional value for no disaggregation
+            disaggregate_by = '(None)';
+            this.state.scores_table = [];  // clear in case of error
+        } else{
+            disaggregate_by = this.state.selected_disaggregate_by;
+            this.state.scores_plot = [];  // clear in case of error
+        }
         return this._fetchData(  // Promise
             this.state.selected_target,
             this.state.selected_eval_window,
-            this.state.selected_disaggregate_by)
+            disaggregate_by)
             .then((data) => {
                 // convert score columns to floats
                 // TODO: extract to helper function for clarity
@@ -376,27 +441,28 @@ const App = {
                         }
                     }
                 }
-                this.state.scores = data;
+
+                // update state
+                if (isFetchScoresTable) {
+                    this.state.scores_table = data;
+                } else{
+                    this.state.scores_plot = data;
+                }
             })
-            .catch(error => console.error(`fetchScores(): error: ${error.message}`));
+            .catch(error => console.error(`fetchScoresTableOrPlot(${isFetchScoresTable}): error: ${error.message}`));
     },
 
     // update display
     updateDisplay() {
         console.log('updateDisplay(): entered');
-        if (this.state.selected_disaggregate_by === '(None)') {
-            this.updateTable();
-        } else {
-            this.updatePlot();
-        }
+        this.updateTable();
+        this.updatePlot();
     },
 
     // update display with table
     updateTable() {
-        $('#predeval_plotly_div').hide();  // hide plot
-        $('#predeval_table').remove();  // remove table
         const thisState = this.state;
-        const $evalDiv = $('#predeval_main');
+        const $evalTablePane = $('#predeval_table_pane');
         const $table = $('<table id="predeval_table" class="table table-sm table-striped table-bordered"></table>');
         const $thead = $('<thead></thead>');
         const $tbody = $('<tbody></tbody>');
@@ -413,19 +479,19 @@ const App = {
         // (have not thoroughly explored alternatives)
         const sort_models_by = this.state.sort_models_by;
         if (this.state.sort_models_direction > 0) {
-            this.state.scores.sort((a, b) => {
+            this.state.scores_table.sort((a, b) => {
                 return d3.ascending(toLowerCaseIfString(a[sort_models_by]),
                                     toLowerCaseIfString(b[sort_models_by]));
             });
         } else {
-            this.state.scores.sort((a, b) => {
+            this.state.scores_table.sort((a, b) => {
                 return d3.descending(toLowerCaseIfString(a[sort_models_by]),
                                      toLowerCaseIfString(b[sort_models_by]));
             });
         }
 
         // add header row
-        const cols = thisState.scores.columns;
+        const cols = thisState.scores_table.columns;
         cols.forEach(function (c) {
             // set up class to use for indicating column sort status
             let c_selected = c === thisState.sort_models_by;
@@ -468,11 +534,11 @@ const App = {
         $table.append($thead);
 
         // add data
-        for (let i = 0; i < thisState.scores.length; i++) { // table rows
+        for (let i = 0; i < thisState.scores_table.length; i++) { // table rows
             const $tr = $('<tr></tr>');
             for (let j = 0; j < cols.length; j++) { // table columns
                 const col_name = cols[j];
-                let text_value = thisState.scores[i][col_name];
+                let text_value = thisState.scores_table[i][col_name];
                 if (col_name !== 'model_id' && col_name !== 'n') {
                     // format score columns
                     // Note: we only build tables if disaggregate_by is '(None)',
@@ -499,8 +565,8 @@ const App = {
         }
         $table.append($tbody);
 
-        // add table to document
-        $evalDiv.append($table);
+        // remove any existing table and add the new table to document
+        $evalTablePane.empty().append($table);
     },
     updateTableSorting(col_name) {
         // handler for column header click to sort by that column
@@ -523,8 +589,6 @@ const App = {
      * Updates the plot
      */
     updatePlot() {
-        $('#predeval_table').remove();  // remove table
-        $('#predeval_plotly_div').show();  // unhide the plot div
         const plotlyDiv = document.getElementById('predeval_plotly_div');
 
         // set the x-axis tickvals; stored in App state, determines the order of:
@@ -546,7 +610,7 @@ const App = {
         // set the xaxis_tickvals property of the App state
         // used in getPlotlyLayout() and getPlotlyData()
 
-        let all_xaxis_vals = this.state.scores.map(d => d[this.state.selected_disaggregate_by]);
+        let all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
 
         // If x axis is a task ID for which human-readable text was provided, use that text
         // TODO: refactor to a function for mapping task id values to text
@@ -564,7 +628,7 @@ const App = {
         this.state.xaxis_tickvals = xaxis_tickvals;
     },
     getPlotlyLayout() {
-        if (this.state.scores.length === 0) {
+        if (this.state.scores_plot.length === 0) {
             return {};
         }
 
@@ -586,7 +650,8 @@ const App = {
                 ticktext: this.state.xaxis_tickvals,
                 categoryorder: 'array',
                 categoryarray: this.state.xaxis_tickvals,
-                fixedrange: false
+                fixedrange: false,
+                automargin: true
             },
             yaxis: {
                 title: {text: score_col_name_to_text(this.state.selected_metric), hoverformat: '.2f'},
@@ -598,9 +663,9 @@ const App = {
         const thisState = this.state;
         let pd = [];
 
-        if (thisState.scores.length !== 0) {
+        if (thisState.scores_plot.length !== 0) {
             // group by model
-            const grouped = d3.group(thisState.scores, d => d.model_id);
+            const grouped = d3.group(thisState.scores_plot, d => d.model_id);
             
             // add a line for scores for each model
             for (const [model_id, model_scores] of grouped) {
