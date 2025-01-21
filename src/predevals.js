@@ -176,7 +176,7 @@ const App = {
         // Dynamic/updated data, used to track 2 categories:
         // 1/2 Tracks UI state:
         selected_target: '',
-        selected_plot_type: 'Line plot',
+        selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
         selected_eval_window: '',
         sort_models_by: 'model_id',
