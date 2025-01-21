@@ -22,6 +22,21 @@ function toLowerCaseIfString(input) {
     }
 }
 
+function hexToRGB(hex) {
+    let r = parseInt(hex.substring(1, 3), 16);
+    let g = parseInt(hex.substring(3, 5), 16);
+    let b = parseInt(hex.substring(5, 7), 16);
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function get_round_decimals(col_name) {
+    const relative_skill_regex = new RegExp('_scaled_relative_skill$');
+    if (relative_skill_regex.test(col_name)) {
+        return 2;
+    } else {
+        return 1;
+    }
+}
 
 /**
  * `initialize()` helper that builds UI by adding DOM elements to $componentDiv. the UI is one row with two columns:
@@ -63,10 +78,10 @@ function _createUIElements($componentDiv) {
     const $fieldsetPlot = $('<fieldset id="predeval_options_plot" class="border p-2 mb-2"></fieldset>')
         .hide();
     $fieldsetPlot.append($('<legend style="font-size: 1.2rem; margin: 0;">Plot Options</legend>'));
+    $fieldsetPlot.append(_createFormRow('predeval_plot_type', 'Plot type'));
     $fieldsetPlot.append(_createFormRow('predeval_disaggregate_by', 'Disaggregate by'));
     $fieldsetPlot.append(_createFormRow('predeval_metric', 'Metric'));
 
-    // $fieldsetPlot.append(_createFormRow('predeval_plot_type', 'Plot type'));
     $optionsForm.append($fieldsetGeneral, $fieldsetPlot);
     $optionsDiv.append($optionsForm);
 
@@ -102,6 +117,10 @@ function _createUIElements($componentDiv) {
 }
 
 
+function parse_coverage_rate(score_name) {
+    return parseFloat(score_name.slice(18));
+}
+
 const score_col_name_to_text_map = new Map(
     [
         ['model_id', 'Model'],
@@ -121,10 +140,9 @@ const score_col_name_to_text_map = new Map(
  * @param {String} score_col_name - the name of a column in a scores data object
  */
 function score_col_name_to_text(score_name) {
-    // console.log(score_name);
     const interval_coverage_regex = new RegExp('^interval_coverage_');
     if (interval_coverage_regex.test(score_name)) {
-        return `${score_name.slice(18)}\% Cov.`;
+        return `${parse_coverage_rate(score_name)}\% Cov.`;
     } else {
         return score_col_name_to_text_map.get(score_name) || titleCase(score_name);
     }
@@ -158,6 +176,7 @@ const App = {
         // Dynamic/updated data, used to track 2 categories:
         // 1/2 Tracks UI state:
         selected_target: '',
+        selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
         selected_eval_window: '',
         sort_models_by: 'model_id',
@@ -221,11 +240,10 @@ const App = {
         this.state.eval_windows = options['eval_windows'];
         this.state.task_id_text = options['task_id_text'];
 
-        // set initial selected state
+        // set initial selected state for entries specified in options
         this.state.selected_target = options['targets'][0].target_id;
         this.state.selected_eval_window = options['eval_windows'][0].window_name;
         this.state.selected_disaggregate_by = options['targets'][0].disaggregate_by[0];
-        // this.state.selected_plot_type = 'Line plot';
         this.state.selected_metric = this.getSelectedTargetObj().metrics[0];
 
         // populate UI elements, setting selection state to initial values defined above
@@ -244,9 +262,9 @@ const App = {
     initializeUI() {
         // populate options (left column)
         this.initializeTargetUI();
-        this.initializeDisaggregateByUI();
         this.initializeEvalWindowUI();
-        // this.initializeDisplayTypeUI();
+        this.initializePlotTypeUI();
+        this.initializeDisaggregateByUI();
         this.initializeMetricUI();
 
         // initialize plotly (right column)
@@ -268,19 +286,6 @@ const App = {
             $targetSelect.append(optionNode);
         });
     },
-    initializeDisaggregateByUI() {
-        // populate the disaggregate_by <SELECT>
-        // this is the "Disaggregate by" dropdown
-        const $disaggregateBySelect = $("#predeval_disaggregate_by");
-        const thisState = this.state;
-        const selected_target_obj = this.getSelectedTargetObj();
-        $disaggregateBySelect.empty();
-        selected_target_obj.disaggregate_by.forEach(function (by) {
-            const selected = by === thisState.selected_disaggregate_by ? 'selected' : '';
-            const optionNode = `<option value="${by}" ${selected} >${by}</option>`;
-            $disaggregateBySelect.append(optionNode);
-        });
-    },
     initializeEvalWindowUI() {
         // populate the eval_window <SELECT>
         const $windowSelect = $("#predeval_eval_window");
@@ -292,16 +297,28 @@ const App = {
             $windowSelect.append(optionNode);
         });
     },
-    initializeDisplayTypeUI() {
-        // populate the plot type <SELECT>
-        // this is a stub for future work, not currently used
-        const $displaySelect = $("#predeval_display_type");
+    initializePlotTypeUI() {
+        // populate the plot_type <SELECT>
+        const $plotTypeSelect = $("#predeval_plot_type");
         const thisState = this.state;
-        const display_types = ['Line plot', 'Heatmap'];
-        display_types.forEach(function (type) {
-            const selected = type === thisState.selected_display_type ? 'selected' : '';
+        const plot_types = ['Line plot', 'Heatmap'];
+        plot_types.forEach(function (type) {
+            const selected = type === thisState.selected_plot_type ? 'selected' : '';
             const optionNode = `<option value="${type}" ${selected} >${type}</option>`;
-            $displaySelect.append(optionNode);
+            $plotTypeSelect.append(optionNode);
+        });
+    },
+    initializeDisaggregateByUI() {
+        // populate the disaggregate_by <SELECT>
+        // this is the "Disaggregate by" dropdown
+        const $disaggregateBySelect = $("#predeval_disaggregate_by");
+        const thisState = this.state;
+        const selected_target_obj = this.getSelectedTargetObj();
+        $disaggregateBySelect.empty();
+        selected_target_obj.disaggregate_by.forEach(function (by) {
+            const selected = by === thisState.selected_disaggregate_by ? 'selected' : '';
+            const optionNode = `<option value="${by}" ${selected} >${by}</option>`;
+            $disaggregateBySelect.append(optionNode);
         });
     },
     initializeMetricUI() {
@@ -333,15 +350,6 @@ const App = {
             App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
 
-        // user changes selection for dissagregate_by dropdown
-        $('#predeval_disaggregate_by').on('change', function () {
-            App.state.selected_disaggregate_by = this.value;
-
-            const isFetchFirst = true;  // fetch data before updating display
-            const isFetchBoth = false;   // fetch plot data only; this setting doesn't affect the table
-            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
-        });
-        
         // user changes selection for evaluation window dropdown
         $('#predeval_eval_window').on('change', function () {
             App.state.selected_eval_window = this.value;
@@ -351,6 +359,24 @@ const App = {
             App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
 
+        // user changes selection for plot type dropdown
+        $('#predeval_plot_type').on('change', function () {
+            App.state.selected_plot_type = this.value;
+
+            const isFetchFirst = false; // no need to fetch data, just update the plot
+            const isFetchBoth = false;  // no need to fetch both table and plot data
+            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
+        });
+
+        // user changes selection for dissagregate_by dropdown
+        $('#predeval_disaggregate_by').on('change', function () {
+            App.state.selected_disaggregate_by = this.value;
+
+            const isFetchFirst = true;  // fetch data before updating display
+            const isFetchBoth = false;   // fetch plot data only; this setting doesn't affect the table
+            App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
+        });
+        
         // user changes selection for metric dropdown
         $('#predeval_metric').on('change', function () {
             App.state.selected_metric = this.value;
@@ -417,6 +443,7 @@ const App = {
             .catch(error => console.error(`fetchScores(): error: ${error.message}`));
     },
     fetchScoresTableOrPlot(isFetchScoresTable) {
+        const interval_coverage_regex = new RegExp('^interval_coverage_');
         let disaggregate_by;
         if (isFetchScoresTable) {
             // note: '(None)' is our conventional value for no disaggregation
@@ -438,7 +465,12 @@ const App = {
                         // This is a score column, so convert values in all rows to float
                         for (let i = 0; i < data.length; i++) {
                             data[i][col_name] = parseFloat(data[i][col_name]);
-                        }
+
+                            // If it's an interval coverage column, multiply by 100
+                            if (interval_coverage_regex.test(col_name)) {
+                                data[i][col_name] *= 100;
+                            }
+                       }
                     }
                 }
 
@@ -469,8 +501,6 @@ const App = {
         const $tr = $('<tr></tr>');
         const $th = $('<th></th>');
         const $td = $('<td></td>');
-        const interval_coverage_regex = new RegExp('^interval_coverage_');
-        const relative_skill_regex = new RegExp('_scaled_relative_skill$');
 
         // sort scores
         // TODO: refactor to a function for sorting scores, shared with plot code
@@ -547,17 +577,8 @@ const App = {
                     // TODO: consider whether to make these formatting behaviors configurable
                     // TODO: consider refactor to helper function for score formatting
 
-                    // If it's an interval coverage column, multiply by 100
-                    if (interval_coverage_regex.test(col_name)) {
-                        text_value *= 100;
-                    }
-
                     // Round to 2 decimal places for relative_skill columns and 1 or all other score columns
-                    if (relative_skill_regex.test(col_name)) {
-                        text_value = text_value.toFixed(2);
-                    } else {
-                        text_value = text_value.toFixed(1);
-                    }
+                    text_value = text_value.toFixed(get_round_decimals(col_name));
                 }
                 $tr.append($td.clone().text(text_value));
             }
@@ -632,15 +653,17 @@ const App = {
             return {};
         }
 
-        // const variable = this.state.target_variables.filter((obj) => obj.value === this.state.selected_target_var)[0].plot_text;
-        // const taskIdTexts = Object.values(this.selectedTaskIDs()).map(taskID => taskID['text']);
-        return {
+        let yaxis_title;
+        if (this.state.selected_plot_type === 'Line plot') {
+            yaxis_title = score_col_name_to_text(this.state.selected_metric);
+        } else if (this.state.selected_plot_type === 'Heatmap') {
+            yaxis_title = null;
+        }
+        let plotly_layout = {
             autosize: true,
             showlegend: true,
             title: {
                 text: `${score_col_name_to_text(this.state.selected_metric)} by ${this.state.selected_disaggregate_by}`,
-                x: 0.5,
-                y: 0.90,
                 xanchor: 'center',
                 yanchor: 'top',
             },
@@ -654,51 +677,252 @@ const App = {
                 automargin: true
             },
             yaxis: {
-                title: {text: score_col_name_to_text(this.state.selected_metric), hoverformat: '.2f'},
-                fixedrange: false
+                title: {text: yaxis_title},
+                fixedrange: false,
+                automargin: true
             }
         }
+        if (this.state.selected_plot_type === 'Line plot') {
+            plotly_layout.autosize = true;
+            $('#predeval_plotly_div').css('height', '75vh');
+        } else if (this.state.selected_plot_type === 'Heatmap') {
+            plotly_layout.width = ('#predeval_plotly_div').width;
+
+            // set height of plotly div based on number of models
+            // 20 px per model, plus 40 px for title and x-axis label
+            // this computation is somewhat arbitrary because it's not
+            // tied to tha actual title and x-axis label heights,
+            // but it seems to work
+            const unique_models = new Set(this.state.scores_plot.map(d => d.model_id))
+            const n_models = unique_models.size;
+            plotly_layout.height = 40 + n_models * 20;
+
+            // set height of plotly div to height of plotly layout
+            $('#predeval_plotly_div').css('height', plotly_layout.height + 'px');
+        }
+
+        return plotly_layout;
     },
     getPlotlyData() {
+        if (this.state.selected_plot_type === 'Line plot') {
+            return this.getPlotlyDataLinePlot();
+        } else if (this.state.selected_plot_type === 'Heatmap') {
+            return this.getPlotlyDataHeatmap();
+        }
+    },
+    getPlotlyDataLinePlot() {
         const thisState = this.state;
         let pd = [];
 
-        if (thisState.scores_plot.length !== 0) {
-            // group by model
-            const grouped = d3.group(thisState.scores_plot, d => d.model_id);
-            
-            // add a line for scores for each model
-            for (const [model_id, model_scores] of grouped) {
-                // get x and y pairs, not sorted
-                let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
-                // TODO: refactor to a function for mapping task id values to text
-                if (Object.keys(thisState.task_id_text).includes(thisState.selected_disaggregate_by)) {
-                    const task_id_text = thisState.task_id_text[thisState.selected_disaggregate_by];
-                    x_unsrt = x_unsrt.map(d => task_id_text[d]);
-                }
+        // early return if no data
+        if (thisState.scores_plot.length === 0) {
+            return pd;
+        }
 
-                const y_unsrt = model_scores.map(d => d[thisState.selected_metric]);
-                let x_y = x_unsrt.map((val, i) => [val, y_unsrt[i]]);
+        // group by model
+        const grouped = d3.group(thisState.scores_plot, d => d.model_id);
+        
+        // add a line for scores for each model
+        for (const [model_id, model_scores] of grouped) {
+            // get x and y pairs, not sorted
+            let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
+            // TODO: refactor to a function for mapping task id values to text
+            if (Object.keys(thisState.task_id_text).includes(thisState.selected_disaggregate_by)) {
+                const task_id_text = thisState.task_id_text[thisState.selected_disaggregate_by];
+                x_unsrt = x_unsrt.map(d => task_id_text[d]);
+            }
 
-                // sort (x, y) pairs in order of this.state.xaxis_tickvals
-                x_y.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
-                const x = x_y.map(d => d[0]);
-                const y = x_y.map(d => d[1]);
+            const y_unsrt = model_scores.map(d => d[thisState.selected_metric]);
+            let x_y = x_unsrt.map((val, i) => [val, y_unsrt[i]]);
 
-                // object for Plotly
-                const line_data = {
-                    x: x,
-                    y: y,
-                    mode: 'lines+markers',
-                    type: 'scatter',
-                    name: model_id,
-                    hovermode: false,
-                    opacity: 0.7,
-                    // line: {color: state.colors[index]},
-                };
-                pd.push(line_data);
+            // sort (x, y) pairs in order of this.state.xaxis_tickvals
+            x_y.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
+            const x = x_y.map(d => d[0]);
+            const y = x_y.map(d => d[1]);
+
+            // object for Plotly
+            const line_data = {
+                x: x,
+                y: y,
+                mode: 'lines+markers',
+                type: 'scatter',
+                name: model_id,
+                hovermode: false,
+                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${get_round_decimals(this.state.selected_metric)}f}<extra></extra>`,
+                opacity: 0.7,
+            };
+            pd.push(line_data);
+        }
+
+        return pd
+    },
+    getPlotlyDataHeatmap() {
+        console.log('getPlotlyDataHeatmap(): entered');
+        const thisState = this.state;
+        const interval_coverage_regex = new RegExp('^interval_coverage_');
+        const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
+        const relative_skill_regex = new RegExp('_scaled_relative_skill$');
+        const is_rel_skill_metric = relative_skill_regex.test(thisState.selected_metric);
+        // const is_logscale = !is_coverage_metric;
+
+        let pd = [];
+
+        // early return if no data
+        if (thisState.scores_plot.length === 0) {
+            return pd;
+        }
+
+        // custom color scales
+        // TODO: refactor to a function for color scale
+        // interval coverage: divergent scale with midpoint at the nominal coverage rate
+        // proper scores and relative skill metrics: log-scale sequential colorscale
+        let eps; // constant added to scores before log-scaling to avoid log(0)
+        let data_scaler;
+        let d3_colorscale;
+        let colorscale_heatmap_data;
+        let colorbar_tick_format;
+        const min_z = d3.min(thisState.scores_plot, d => d[thisState.selected_metric]);
+        const max_z = d3.max(thisState.scores_plot, d => d[thisState.selected_metric]);
+        if (is_coverage_metric) {
+            // interval coverage
+            eps = 0.0;
+            colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
+
+            d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
+            const colorscale_range = [0, 1]; // red low, blue high
+
+            // we use a divergent color scale on a linear scale from
+            // [nominal_level - delta, nominal_level + delta] to colorscale_range,
+            // where delta is the maximum of nominal_level and 100 - nominal_level
+            // (to ensure that the color scale is centered at the nominal level)
+            const nominal_level = parse_coverage_rate(thisState.selected_metric);
+            const delta = Math.max(nominal_level, 100 - nominal_level);
+            data_scaler = d3.scaleLinear([nominal_level - delta, nominal_level + delta], colorscale_range);
+        } else {
+            // proper scores and relative skill metrics
+            // For relative skill metrics, we use a diverging red-blue color scale
+            // with 1.0 at white, the minimum value at blue, and the maximum value at red.
+            // For proper scores, we use a sequential viridis color scale with
+            // blue at the minimum value (good scores) and yellow at the maximum value (poor scores)
+
+            // These scores are generally positive and skewed, so we used a log scale
+            // There is not great support for log scales in Plotly heatmaps,
+            // see https://github.com/plotly/documentation/issues/1611.
+            // Our approach follows the recommendation in the comments there:
+            // 1. log-transform the data
+            // 2. apply color scale to the log-transformed data
+            // 3. add a colorbar with tickvals and ticktext for the original data values
+            // 4. update hover text to show the original data values
+
+            // for log-scale, we add a small constant to avoid log(0)
+            // we use the minimum nonzero value divided by 2 to get
+            // something that's placed reasonably well relative to other data
+            const nonzero_min = d3.min(
+                thisState.scores_plot.filter(d => d[thisState.selected_metric] > 0),
+                d => d[thisState.selected_metric]
+            );
+            eps = nonzero_min / 2.0;
+
+            // scientific notation for colorbar tick labels
+            colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
+
+            // color scale type and direction depends on metric type
+            let colorscale_range;
+            if (is_rel_skill_metric) {
+                // d3 provides a color scale with red at 0.0 and blue at 1.0
+                // we want the opposite, so we reverse the scale
+                const d3_colorscale_raw = d3.scaleSequential(d3.interpolateRdBu);
+                d3_colorscale = (x) => d3_colorscale_raw(1.0 - x);
+                colorscale_range = [0, 1]; // blue low, red high
+
+                // our color scale is on a log scale from [1 / max_z, max_z] to colorscale_range
+                // or [min_z, 1 / min_z] to colorscale_range, whichever range is larger
+                const logscale_max = Math.max(1 / (min_z + eps), max_z + eps);
+                data_scaler = d3.scaleLog([1 / logscale_max, logscale_max], colorscale_range);
+            } else {
+                // counter to documentation, the d3 viridis color scale returns
+                // hex representions of color rather than rgb; plotly requires rgb
+                const d3_colorscale_raw = d3.scaleSequential(d3.interpolateViridis);
+                d3_colorscale = (x) => hexToRGB(d3_colorscale_raw(x));
+                colorscale_range = [0, 1]; // blue low, yellow high
+                data_scaler = d3.scaleLog([min_z + eps, max_z + eps], colorscale_range);
             }
         }
+
+        // set up the custom colorscale for the heatmap
+        const all_z = thisState.scores_plot.map(d => data_scaler(d[thisState.selected_metric] + eps))
+        const unique_z = [...new Set(all_z)]
+            .filter(item => item !== undefined)
+            .sort((a, b) => a - b);
+        const linear_scaler = d3.scaleLinear([unique_z[0], unique_z[unique_z.length - 1]], [0, 1]);
+
+        // array of [t, color] pairs where t is in [0, 1] and color is an rgb string
+        const custom_colorscale = unique_z.map(z => {
+            return [linear_scaler(z), d3_colorscale(z)];
+        });
+        colorscale_heatmap_data = {
+            colorscale: custom_colorscale,
+            showscale: true,
+            colorbar: {
+                tickmode: 'array',
+                tickvals: data_scaler.ticks().map((x) => data_scaler(x + eps)),
+                ticktext: data_scaler.ticks().map(data_scaler.tickFormat(12, colorbar_tick_format))
+            }
+        };
+
+        // group score data by model
+        const grouped = d3.group(thisState.scores_plot, d => d.model_id);
+        
+        let x = thisState.xaxis_tickvals; // this.state.selected_disaggregate_by
+        let y = Array.from(grouped.keys()); // model_id
+        let z = []; // scores on transformed scale (log scale if applicable)
+        let z_orig = []; // scores on original scale
+
+        // add a heatmap row for scores for each model
+        for (const [model_id, model_scores] of grouped) {
+            // get x and z pairs, not sorted
+            let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
+            // TODO: refactor to a function for mapping task id values to text
+            if (Object.keys(thisState.task_id_text).includes(thisState.selected_disaggregate_by)) {
+                const task_id_text = thisState.task_id_text[thisState.selected_disaggregate_by];
+                x_unsrt = x_unsrt.map(d => task_id_text[d]);
+            }
+
+            const z_unsrt = model_scores.map(d => data_scaler(d[thisState.selected_metric] + eps));
+            const z_orig_unsrt = model_scores.map(d => d[thisState.selected_metric]);
+            let x_z = x_unsrt.map((val, i) => [val, z_unsrt[i], z_orig_unsrt[i]]);
+
+            // sort (x, z, z_orig) tuples in order of this.state.xaxis_tickvals
+            x_z.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
+
+            // get z values in the order of xaxis_tickvals,
+            // including missing values represented as null
+            const model_z = thisState.xaxis_tickvals.map(x_val => {
+                const this_x_z_val = x_z.find(d => d[0] === x_val);
+                return this_x_z_val ? this_x_z_val[1] : null;
+            });
+            const model_z_orig = thisState.xaxis_tickvals.map(x_val => {
+                const this_x_z_val = x_z.find(d => d[0] === x_val);
+                return this_x_z_val ? this_x_z_val[2] : null;
+            });
+
+            z.push(model_z);
+            z_orig.push(model_z_orig);
+        }
+
+        // object for Plotly
+        let heatmap_data = {
+            x: x,
+            y: y,
+            z: z,
+            customdata: z_orig,
+            type: 'heatmap',
+            hovertemplate: `${thisState.selected_disaggregate_by}: %{x}<br>model: %{y}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata:.${get_round_decimals(this.state.selected_metric)}f}<extra></extra>`,
+            hoverongaps: false
+        };
+
+        // combine data for heatmap with custom colorscale and add to plot data
+        pd.push({...heatmap_data, ...colorscale_heatmap_data});
 
         return pd
     },
