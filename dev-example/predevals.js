@@ -140,7 +140,6 @@ const score_col_name_to_text_map = new Map(
  * @param {String} score_col_name - the name of a column in a scores data object
  */
 function score_col_name_to_text(score_name) {
-    // console.log(score_name);
     const interval_coverage_regex = new RegExp('^interval_coverage_');
     if (interval_coverage_regex.test(score_name)) {
         return `${parse_coverage_rate(score_name)}\% Cov.`;
@@ -749,6 +748,7 @@ const App = {
                 type: 'scatter',
                 name: model_id,
                 hovermode: false,
+                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${get_round_decimals(this.state.selected_metric)}f}<extra></extra>`,
                 opacity: 0.7,
             };
             pd.push(line_data);
@@ -763,7 +763,7 @@ const App = {
         const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
         const relative_skill_regex = new RegExp('_scaled_relative_skill$');
         const is_rel_skill_metric = relative_skill_regex.test(thisState.selected_metric);
-        const is_logscale = !is_coverage_metric;
+        // const is_logscale = !is_coverage_metric;
 
         let pd = [];
 
@@ -772,30 +772,48 @@ const App = {
             return pd;
         }
 
-        // custom log-scale colorscale for relative skill metrics and proper scores
-        // there is not good support for this in plotly.js,
-        // see https://github.com/plotly/documentation/issues/1611
-        // our approach follows the recommendation there:
-        // 1. log-transform the data
-        // 2. apply color scale to the log-transformed data
-        // 3. add a colorbar with tickvals and ticktext for the original data values
-        // 4. update hover text to show the original data values
-
-        // for relative skill metrics, we use a diverging red-blue color scale
-        // with 1.0 at white, the minimum value at blue, and the maximum value at red
-
-        // for proper scores, we use a sequential viridis color scale with
-        // blue at the minimum value (good scores) and yellow at the maximum value (poor scores)
+        // custom color scales
+        // TODO: refactor to a function for color scale
+        // interval coverage: divergent scale with midpoint at the nominal coverage rate
+        // proper scores and relative skill metrics: log-scale sequential colorscale
         let eps; // constant added to scores before log-scaling to avoid log(0)
         let data_scaler;
+        let d3_colorscale;
         let colorscale_heatmap_data;
+        let colorbar_tick_format;
         const min_z = d3.min(thisState.scores_plot, d => d[thisState.selected_metric]);
         const max_z = d3.max(thisState.scores_plot, d => d[thisState.selected_metric]);
-        if (!is_logscale) {
+        if (is_coverage_metric) {
+            // interval coverage
             eps = 0.0;
-            data_scaler = (d) => d;
-            colorscale_heatmap_data = {};
+            colorbar_tick_format = '.0f';
+
+            d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
+            const colorscale_range = [0, 1]; // red low, blue high
+
+            // we use a divergent color scale on a linear scale from
+            // [nominal_level - delta, nominal_level + delta] to colorscale_range,
+            // where delta is the maximum of nominal_level and 100 - nominal_level
+            // (to ensure that the color scale is centered at the nominal level)
+            const nominal_level = parse_coverage_rate(thisState.selected_metric);
+            const delta = Math.max(nominal_level, 100 - nominal_level);
+            data_scaler = d3.scaleLinear([nominal_level - delta, nominal_level + delta], colorscale_range);
         } else {
+            // proper scores and relative skill metrics
+            // For relative skill metrics, we use a diverging red-blue color scale
+            // with 1.0 at white, the minimum value at blue, and the maximum value at red.
+            // For proper scores, we use a sequential viridis color scale with
+            // blue at the minimum value (good scores) and yellow at the maximum value (poor scores)
+
+            // These scores are generally positive and skewed, so we used a log scale
+            // There is not great support for log scales in Plotly heatmaps,
+            // see https://github.com/plotly/documentation/issues/1611.
+            // Our approach follows the recommendation in the comments there:
+            // 1. log-transform the data
+            // 2. apply color scale to the log-transformed data
+            // 3. add a colorbar with tickvals and ticktext for the original data values
+            // 4. update hover text to show the original data values
+
             // for log-scale, we add a small constant to avoid log(0)
             // we use the minimum nonzero value divided by 2 to get
             // something that's placed reasonably well relative to other data
@@ -805,8 +823,10 @@ const App = {
             );
             eps = nonzero_min / 2.0;
 
+            // scientific notation for colorbar tick labels
+            colorbar_tick_format = '~e';
+
             // color scale type and direction depends on metric type
-            let d3_colorscale;
             let colorscale_range;
             if (is_rel_skill_metric) {
                 d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
@@ -824,32 +844,36 @@ const App = {
                 colorscale_range = [0, 1]; // blue low, yellow high
                 data_scaler = d3.scaleLog([min_z + eps, max_z + eps], colorscale_range);
             }
-            
-            const unique_z = [...new Set(thisState.scores_plot.map(d => data_scaler(d[thisState.selected_metric] + eps)))]
-                .filter(item => item !== undefined)
-                .sort((a, b) => a - b);
-            const linear_scaler = d3.scaleLinear([unique_z[0], unique_z[unique_z.length - 1]], [0, 1]);
-            const custom_colorscale = unique_z.map(z => {
-                return [linear_scaler(z), d3_colorscale(z)];
-            });
-            colorscale_heatmap_data = {
-                colorscale: custom_colorscale,
-                showscale: true,
-                colorbar: {
-                    tickmode: 'array',
-                    tickvals: data_scaler.ticks().map((x) => data_scaler(x + eps)),
-                    ticktext: data_scaler.ticks().map(data_scaler.tickFormat(10, "~e"))
-                }
-            };
         }
 
-        // group by model
+        // set up the custom colorscale for the heatmap
+        const all_z = thisState.scores_plot.map(d => data_scaler(d[thisState.selected_metric] + eps))
+        const unique_z = [...new Set(all_z)]
+            .filter(item => item !== undefined)
+            .sort((a, b) => a - b);
+        const linear_scaler = d3.scaleLinear([unique_z[0], unique_z[unique_z.length - 1]], [0, 1]);
+
+        // array of [t, color] pairs where t is in [0, 1] and color is an rgb string
+        const custom_colorscale = unique_z.map(z => {
+            return [linear_scaler(z), d3_colorscale(z)];
+        });
+        colorscale_heatmap_data = {
+            colorscale: custom_colorscale,
+            showscale: true,
+            colorbar: {
+                tickmode: 'array',
+                tickvals: data_scaler.ticks().map((x) => data_scaler(x + eps)),
+                ticktext: data_scaler.ticks().map(data_scaler.tickFormat(12, colorbar_tick_format))
+            }
+        };
+
+        // group score data by model
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
         
-        let x = thisState.xaxis_tickvals;
-        let y = Array.from(grouped.keys());
-        let z = [];
-        let z_orig = [];
+        let x = thisState.xaxis_tickvals; // this.state.selected_disaggregate_by
+        let y = Array.from(grouped.keys()); // model_id
+        let z = []; // scores on transformed scale (log scale if applicable)
+        let z_orig = []; // scores on original scale
 
         // add a heatmap row for scores for each model
         for (const [model_id, model_scores] of grouped) {
@@ -894,6 +918,7 @@ const App = {
             hoverongaps: false
         };
 
+        // combine data for heatmap with custom colorscale and add to plot data
         pd.push({...heatmap_data, ...colorscale_heatmap_data});
 
         return pd

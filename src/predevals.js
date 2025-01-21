@@ -748,6 +748,7 @@ const App = {
                 type: 'scatter',
                 name: model_id,
                 hovermode: false,
+                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${get_round_decimals(this.state.selected_metric)}f}<extra></extra>`,
                 opacity: 0.7,
             };
             pd.push(line_data);
@@ -762,7 +763,7 @@ const App = {
         const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
         const relative_skill_regex = new RegExp('_scaled_relative_skill$');
         const is_rel_skill_metric = relative_skill_regex.test(thisState.selected_metric);
-        const is_logscale = !is_coverage_metric;
+        // const is_logscale = !is_coverage_metric;
 
         let pd = [];
 
@@ -777,25 +778,26 @@ const App = {
         // proper scores and relative skill metrics: log-scale sequential colorscale
         let eps; // constant added to scores before log-scaling to avoid log(0)
         let data_scaler;
+        let d3_colorscale;
         let colorscale_heatmap_data;
+        let colorbar_tick_format;
         const min_z = d3.min(thisState.scores_plot, d => d[thisState.selected_metric]);
         const max_z = d3.max(thisState.scores_plot, d => d[thisState.selected_metric]);
         if (is_coverage_metric) {
             // interval coverage
             eps = 0.0;
-            data_scaler = (d) => d;
+            colorbar_tick_format = '.0f';
 
             d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
-            colorscale_range = [0, 1]; // red low, blue high
+            const colorscale_range = [0, 1]; // red low, blue high
 
-            // our color scale is on a linear scale from
+            // we use a divergent color scale on a linear scale from
             // [nominal_level - delta, nominal_level + delta] to colorscale_range,
-            // where delta is the maximum of nominal_level and 1 - nominal_level
+            // where delta is the maximum of nominal_level and 100 - nominal_level
             // (to ensure that the color scale is centered at the nominal level)
-            const logscale_max = Math.max(1 / (min_z + eps), max_z + eps);
-            data_scaler = d3.scaleLog([1 / logscale_max, logscale_max], colorscale_range);
-
-            colorscale_heatmap_data = {};
+            const nominal_level = parse_coverage_rate(thisState.selected_metric);
+            const delta = Math.max(nominal_level, 100 - nominal_level);
+            data_scaler = d3.scaleLinear([nominal_level - delta, nominal_level + delta], colorscale_range);
         } else {
             // proper scores and relative skill metrics
             // For relative skill metrics, we use a diverging red-blue color scale
@@ -806,7 +808,7 @@ const App = {
             // These scores are generally positive and skewed, so we used a log scale
             // There is not great support for log scales in Plotly heatmaps,
             // see https://github.com/plotly/documentation/issues/1611.
-            // Our approach follows the recommendation there:
+            // Our approach follows the recommendation in the comments there:
             // 1. log-transform the data
             // 2. apply color scale to the log-transformed data
             // 3. add a colorbar with tickvals and ticktext for the original data values
@@ -821,8 +823,10 @@ const App = {
             );
             eps = nonzero_min / 2.0;
 
+            // scientific notation for colorbar tick labels
+            colorbar_tick_format = '~e';
+
             // color scale type and direction depends on metric type
-            let d3_colorscale;
             let colorscale_range;
             if (is_rel_skill_metric) {
                 d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
@@ -840,28 +844,28 @@ const App = {
                 colorscale_range = [0, 1]; // blue low, yellow high
                 data_scaler = d3.scaleLog([min_z + eps, max_z + eps], colorscale_range);
             }
-            
-            const all_z = thisState.scores_plot.map(d => data_scaler(d[thisState.selected_metric] + eps))
-            const unique_z = [...new Set(all_z)]
-                .filter(item => item !== undefined)
-                .sort((a, b) => a - b);
-            const linear_scaler = d3.scaleLinear([unique_z[0], unique_z[unique_z.length - 1]], [0, 1]);
-
-            // custom colorscale for heatmap
-            // array of [t, color] pairs where t is in [0, 1] and color is an rgb string
-            const custom_colorscale = unique_z.map(z => {
-                return [linear_scaler(z), d3_colorscale(z)];
-            });
-            colorscale_heatmap_data = {
-                colorscale: custom_colorscale,
-                showscale: true,
-                colorbar: {
-                    tickmode: 'array',
-                    tickvals: data_scaler.ticks().map((x) => data_scaler(x + eps)),
-                    ticktext: data_scaler.ticks().map(data_scaler.tickFormat(10, "~e"))
-                }
-            };
         }
+
+        // set up the custom colorscale for the heatmap
+        const all_z = thisState.scores_plot.map(d => data_scaler(d[thisState.selected_metric] + eps))
+        const unique_z = [...new Set(all_z)]
+            .filter(item => item !== undefined)
+            .sort((a, b) => a - b);
+        const linear_scaler = d3.scaleLinear([unique_z[0], unique_z[unique_z.length - 1]], [0, 1]);
+
+        // array of [t, color] pairs where t is in [0, 1] and color is an rgb string
+        const custom_colorscale = unique_z.map(z => {
+            return [linear_scaler(z), d3_colorscale(z)];
+        });
+        colorscale_heatmap_data = {
+            colorscale: custom_colorscale,
+            showscale: true,
+            colorbar: {
+                tickmode: 'array',
+                tickvals: data_scaler.ticks().map((x) => data_scaler(x + eps)),
+                ticktext: data_scaler.ticks().map(data_scaler.tickFormat(12, colorbar_tick_format))
+            }
+        };
 
         // group score data by model
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
