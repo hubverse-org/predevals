@@ -786,7 +786,7 @@ const App = {
         if (is_coverage_metric) {
             // interval coverage
             eps = 0.0;
-            colorbar_tick_format = '.0f';
+            colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
 
             d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
             const colorscale_range = [0, 1]; // red low, blue high
@@ -824,7 +824,7 @@ const App = {
             eps = nonzero_min / 2.0;
 
             // scientific notation for colorbar tick labels
-            colorbar_tick_format = '~e';
+            colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
 
             // color scale type and direction depends on metric type
             let colorscale_range;
