@@ -829,8 +829,11 @@ const App = {
             // color scale type and direction depends on metric type
             let colorscale_range;
             if (is_rel_skill_metric) {
-                d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
-                colorscale_range = [1, 0]; // red high, blue low
+                // d3 provides a color scale with red at 0.0 and blue at 1.0
+                // we want the opposite, so we reverse the scale
+                const d3_colorscale_raw = d3.scaleSequential(d3.interpolateRdBu);
+                d3_colorscale = (x) => d3_colorscale_raw(1.0 - x);
+                colorscale_range = [0, 1]; // blue low, red high
 
                 // our color scale is on a log scale from [1 / max_z, max_z] to colorscale_range
                 // or [min_z, 1 / min_z] to colorscale_range, whichever range is larger
