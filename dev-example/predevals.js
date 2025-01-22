@@ -695,10 +695,11 @@ const App = {
             // but it seems to work
             const unique_models = new Set(this.state.scores_plot.map(d => d.model_id))
             const n_models = unique_models.size;
-            plotly_layout.height = 40 + n_models * 20;
+            const height = Math.max(200 + n_models * 20, 0.75 * $(window).height());
+            plotly_layout.height = height;
 
             // set height of plotly div to height of plotly layout
-            $('#predeval_plotly_div').css('height', plotly_layout.height + 'px');
+            $('#predeval_plotly_div').css('height', height + 'px');
         }
 
         return plotly_layout;
@@ -763,7 +764,6 @@ const App = {
         const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
         const relative_skill_regex = new RegExp('_scaled_relative_skill$');
         const is_rel_skill_metric = relative_skill_regex.test(thisState.selected_metric);
-        // const is_logscale = !is_coverage_metric;
 
         let pd = [];
 
@@ -823,7 +823,7 @@ const App = {
             );
             eps = nonzero_min / 2.0;
 
-            // scientific notation for colorbar tick labels
+            // tick labels are rounded the number of decimal places for the selected metric
             colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
 
             // color scale type and direction depends on metric type
