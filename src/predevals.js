@@ -72,7 +72,7 @@ function _createUIElements($componentDiv) {
     const $fieldsetGeneral = $('<fieldset id="predeval_options_general" class="border p-2 mb-2"></fieldset>');
     $fieldsetGeneral.append($('<legend style="font-size: 1.2rem; margin: 0;">General Options</legend>'));
     $fieldsetGeneral.append(_createFormRow('predeval_target', 'Target'));
-    $fieldsetGeneral.append(_createFormRow('predeval_eval_window', 'Evaluation window'));
+    $fieldsetGeneral.append(_createFormRow('predeval_eval_set', 'Evaluation set'));
 
     // the fieldset for plot options is hidden by default; it is shown when the plot tab is selected
     const $fieldsetPlot = $('<fieldset id="predeval_options_plot" class="border p-2 mb-2"></fieldset>')
@@ -170,7 +170,7 @@ const App = {
     state: {
         // Static data, fixed at time of creation:
         targets: [],
-        eval_windows: [],
+        eval_sets: [],
         task_id_text: {},
 
         // Dynamic/updated data, used to track 2 categories:
@@ -178,7 +178,7 @@ const App = {
         selected_target: '',
         selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
-        selected_eval_window: '',
+        selected_eval_set: '',
         sort_models_by: 'model_id',
         sort_models_direction: 1,
         xaxis_tickvals: [],
@@ -237,12 +237,12 @@ const App = {
         // save static vars
         this._fetchData = _fetchData;
         this.state.targets = options['targets'];
-        this.state.eval_windows = options['eval_windows'];
+        this.state.eval_sets = options['eval_sets'];
         this.state.task_id_text = options['task_id_text'];
 
         // set initial selected state for entries specified in options
         this.state.selected_target = options['targets'][0].target_id;
-        this.state.selected_eval_window = options['eval_windows'][0].window_name;
+        this.state.selected_eval_set = options['eval_sets'][0].eval_set_name;
         this.state.selected_disaggregate_by = options['targets'][0].disaggregate_by[0];
         this.state.selected_metric = this.getSelectedTargetObj().metrics[0];
 
@@ -262,7 +262,7 @@ const App = {
     initializeUI() {
         // populate options (left column)
         this.initializeTargetUI();
-        this.initializeEvalWindowUI();
+        this.initializeEvalSetUI();
         this.initializePlotTypeUI();
         this.initializeDisaggregateByUI();
         this.initializeMetricUI();
@@ -286,15 +286,15 @@ const App = {
             $targetSelect.append(optionNode);
         });
     },
-    initializeEvalWindowUI() {
-        // populate the eval_window <SELECT>
-        const $windowSelect = $("#predeval_eval_window");
+    initializeEvalSetUI() {
+        // populate the eval_set <SELECT>
+        const $setSelect = $("#predeval_eval_set");
         const thisState = this.state;
-        this.state.eval_windows.forEach(function (window) {
-            const window_name = window.window_name;
-            const selected = window_name === thisState.selected_eval_window ? 'selected' : '';
-            const optionNode = `<option value="${window_name}" ${selected} >${window_name}</option>`;
-            $windowSelect.append(optionNode);
+        this.state.eval_sets.forEach(function (eval_set) {
+            const eval_set_name = eval_set.eval_set_name;
+            const selected = eval_set_name === thisState.selected_eval_set ? 'selected' : '';
+            const optionNode = `<option value="${eval_set_name}" ${selected} >${eval_set_name}</option>`;
+            $setSelect.append(optionNode);
         });
     },
     initializePlotTypeUI() {
@@ -350,9 +350,9 @@ const App = {
             App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
 
-        // user changes selection for evaluation window dropdown
-        $('#predeval_eval_window').on('change', function () {
-            App.state.selected_eval_window = this.value;
+        // user changes selection for evaluation set dropdown
+        $('#predeval_eval_set').on('change', function () {
+            App.state.selected_eval_set = this.value;
 
             const isFetchFirst = true;  // fetch data before updating display
             const isFetchBoth = true;   // fetch both table and plot data; this is a general setting change
@@ -431,7 +431,7 @@ const App = {
     fetchScores(isFetchBoth) {
         // fetch scores data
         // Any time we would need to fetch scores_table data, we also fetch scores_plot data
-        // because a general setting has been changed (e.g., target, eval_window)
+        // because a general setting has been changed (e.g., target, eval_set)
         // However, we may need to fetch scores_plot data without fetching scores_table data
         // (e.g., when the disaggregate_by variable is changed)
         const promises = [this.fetchScoresTableOrPlot(false)];
@@ -455,7 +455,7 @@ const App = {
         }
         return this._fetchData(  // Promise
             this.state.selected_target,
-            this.state.selected_eval_window,
+            this.state.selected_eval_set,
             disaggregate_by)
             .then((data) => {
                 // convert score columns to floats
