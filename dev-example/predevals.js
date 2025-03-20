@@ -634,12 +634,7 @@ const App = {
         let all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
 
         // If x axis is a task ID for which human-readable text was provided, use that text
-        // TODO: refactor to a function for mapping task id values to text
-        if (Object.keys(this.state.task_id_text).includes(this.state.selected_disaggregate_by)) {
-            console.log('Disaggregating by task ID with text');
-            const task_id_text = this.state.task_id_text[this.state.selected_disaggregate_by];
-            all_xaxis_vals = all_xaxis_vals.map(d => task_id_text[d]);
-        }
+        all_xaxis_vals = this.taskIdValuesToText(this.state.selected_disaggregate_by, all_xaxis_vals)
 
         // get unique values and sort
         const xaxis_tickvals_unsorted = [...new Set(all_xaxis_vals)];
@@ -727,11 +722,9 @@ const App = {
         for (const [model_id, model_scores] of grouped) {
             // get x and y pairs, not sorted
             let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
-            // TODO: refactor to a function for mapping task id values to text
-            if (Object.keys(thisState.task_id_text).includes(thisState.selected_disaggregate_by)) {
-                const task_id_text = thisState.task_id_text[thisState.selected_disaggregate_by];
-                x_unsrt = x_unsrt.map(d => task_id_text[d]);
-            }
+
+            // If x axis is a task ID for which human-readable text was provided, use that text
+            x_unsrt = this.taskIdValuesToText(thisState.selected_disaggregate_by, x_unsrt)
 
             const y_unsrt = model_scores.map(d => d[thisState.selected_metric]);
             let x_y = x_unsrt.map((val, i) => [val, y_unsrt[i]]);
@@ -882,11 +875,9 @@ const App = {
         for (const [model_id, model_scores] of grouped) {
             // get x and z pairs, not sorted
             let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
-            // TODO: refactor to a function for mapping task id values to text
-            if (Object.keys(thisState.task_id_text).includes(thisState.selected_disaggregate_by)) {
-                const task_id_text = thisState.task_id_text[thisState.selected_disaggregate_by];
-                x_unsrt = x_unsrt.map(d => task_id_text[d]);
-            }
+
+            // If x axis is a task ID for which human-readable text was provided, use that text
+            x_unsrt = this.taskIdValuesToText(thisState.selected_disaggregate_by, x_unsrt)
 
             const z_unsrt = model_scores.map(d => data_scaler(d[thisState.selected_metric] + eps));
             const z_orig_unsrt = model_scores.map(d => d[thisState.selected_metric]);
@@ -926,6 +917,25 @@ const App = {
 
         return pd
     },
+
+    // utility functions
+
+    /**
+     * Map values of a task id variable to human-readable text.
+     * If this.state.task_id_text is undefined or does not contain the task id variable, returns the input values.
+     *
+     * @param taskId string: the task id variable name
+     * @param taskIdValues array[string]: the task id values to map to text
+     */
+    taskIdValuesToText(taskId, taskIdValues) {
+        const thisState = this.state;
+        if (thisState.task_id_text !== undefined && Object.keys(thisState.task_id_text).includes(taskId)) {
+            const taskIdTextMap = thisState.task_id_text[taskId];
+            return taskIdValues.map(d => taskIdTextMap[d]);
+        } else {
+            return taskIdValues;
+        }
+    }
 };
 
 
