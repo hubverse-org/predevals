@@ -30,7 +30,7 @@
 </div> <!-- /content -->
 
 <script id="predevals-interface" type="module">
-import App from './predevals.js';
+import App from './predevals.bundle.js';  // hard-coded from webpack.config.cjs `output.filename`
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 document.predevals = App;  // for debugging
