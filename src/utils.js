@@ -30,4 +30,32 @@ function parse_coverage_rate(score_name) {
     return parseFloat(score_name.slice(18));
 }
 
-export {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals, parse_coverage_rate}
+/**
+ * Does an in-place conversion of `data`'s score and 'n' columns' data types: Scores convert to floats, and 'n' to ints.
+ *
+ * @param disaggregateBy {String} - an `App.state.selected_disaggregate_by` value
+ * @param data {array} - as returned by _fetchData() - a d3.csv() object
+ */
+function convertDataColumnTypes(disaggregateBy, data) {
+    const interval_coverage_regex = new RegExp('^interval_coverage_');
+    for (const col_name of data.columns) {
+        if (!['model_id', 'n', disaggregateBy].includes(col_name)) {
+            // This is a score column, so convert values in all rows to float
+            for (let i = 0; i < data.length; i++) {
+                data[i][col_name] = parseFloat(data[i][col_name]);
+
+                // If it's an interval coverage column, multiply by 100
+                if (interval_coverage_regex.test(col_name)) {
+                    data[i][col_name] *= 100;
+                }
+            }
+        } else if (col_name === 'n') {
+            // This is the 'n' column, so convert values in all rows to int
+            for (let i = 0; i < data.length; i++) {
+                data[i][col_name] = parseInt(data[i][col_name]);
+            }
+        }
+    }
+}
+
+export {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals, parse_coverage_rate, convertDataColumnTypes}

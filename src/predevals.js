@@ -3,7 +3,14 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-import {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals, parse_coverage_rate} from "./utils.js";
+import {
+    titleCase,
+    toLowerCaseIfString,
+    hexToRGB,
+    get_round_decimals,
+    parse_coverage_rate,
+    convertDataColumnTypes
+} from "./utils.js";
 
 
 /**
@@ -407,7 +414,6 @@ const App = {
             .catch(error => console.error(`fetchScores(): error: ${error.message}`));
     },
     fetchScoresTableOrPlot(isFetchScoresTable) {
-        const interval_coverage_regex = new RegExp('^interval_coverage_');
         let disaggregate_by;
         if (isFetchScoresTable) {
             // note: '(None)' is our conventional value for no disaggregation
@@ -417,28 +423,13 @@ const App = {
             disaggregate_by = this.state.selected_disaggregate_by;
             this.state.scores_plot = [];  // clear in case of error
         }
-        return this._fetchData(  // Promise
-            this.state.selected_target,  // 'wk inc flu hosp'
-            this.state.selected_eval_set,  // 'Full season' | 'Last 4 weeks'
-            disaggregate_by)  // null | 'horizon' | 'location' | ...
+        return this._fetchData(  // a Promise
+            this.state.selected_target,  // ex: 'wk inc flu hosp'
+            this.state.selected_eval_set,  // ex: 'Full season', 'Last 4 weeks'
+            disaggregate_by)  // ex: null, 'horizon', 'location', ...
             .then((data) => {
-                // convert score columns to floats
-                // TODO: extract to helper function for clarity
-                // ["model_id", "location", "wis_scaled_relative_skill", "wis", "ae_median_scaled_relative_skill",
-                //  "ae_median", "interval_coverage_50", "interval_coverage_95", "n"]
-                for (const col_name of data.columns) {
-                    if (!['model_id', 'n', this.state.selected_disaggregate_by].includes(col_name)) {
-                        // This is a score column, so convert values in all rows to float
-                        for (let i = 0; i < data.length; i++) {
-                            data[i][col_name] = parseFloat(data[i][col_name]);
-
-                            // If it's an interval coverage column, multiply by 100
-                            if (interval_coverage_regex.test(col_name)) {
-                                data[i][col_name] *= 100;
-                            }
-                       }
-                    }
-                }
+                // do an in-place conversion of score and 'n' columns' data types
+                convertDataColumnTypes(this.state.selected_disaggregate_by, data);
 
                 // update state
                 if (isFetchScoresTable) {
