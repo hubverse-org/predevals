@@ -22,13 +22,13 @@ npm install --save-dev
 The `dev-example` folder has a minimal working example for local development, based on the [flusight-dashboard](https://github.com/reichlab/flusight-dashboard). To use this example for development, use the following commands, starting from the root of the `predevals` repository:
 
 ```bash
-npm run build  # create dist/predevals.bundle.js
+npm run build
 cp dist/predevals.bundle.js dev-example
 cd dev-example
 python3 -m http.server 8000
 ```
 
-Then open http://127.0.0.1:8080/ in your web browser. As you make changes to `src/predevals.js`, rebuild and recopy the updated predevals.bundle.js into the `dev-example` folder and then refresh the page in your browser.
+Then open http://127.0.0.1:8000/ in your web browser. As you make changes to `src/predevals.js`, rebuild and recopy the updated predevals.bundle.js into the `dev-example` folder and then refresh the page in your browser.
 
 ## Creating a release
 
