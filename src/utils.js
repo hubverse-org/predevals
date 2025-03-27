@@ -26,4 +26,8 @@ function get_round_decimals(col_name) {
     }
 }
 
-export {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals}
+function parse_coverage_rate(score_name) {
+    return parseFloat(score_name.slice(18));
+}
+
+export {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals, parse_coverage_rate}

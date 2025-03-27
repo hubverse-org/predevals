@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-import {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals} from "./utils.js";
+import {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals, parse_coverage_rate} from "./utils.js";
 
 
 /**
@@ -84,10 +84,6 @@ function _createUIElements($componentDiv) {
     $componentDiv.empty().append($optionsDiv, $evalDiv);
 }
 
-
-function parse_coverage_rate(score_name) {
-    return parseFloat(score_name.slice(18));
-}
 
 const score_col_name_to_text_map = new Map(
     [
@@ -422,12 +418,14 @@ const App = {
             this.state.scores_plot = [];  // clear in case of error
         }
         return this._fetchData(  // Promise
-            this.state.selected_target,
-            this.state.selected_eval_set,
-            disaggregate_by)
+            this.state.selected_target,  // 'wk inc flu hosp'
+            this.state.selected_eval_set,  // 'Full season' | 'Last 4 weeks'
+            disaggregate_by)  // null | 'horizon' | 'location' | ...
             .then((data) => {
                 // convert score columns to floats
                 // TODO: extract to helper function for clarity
+                // ["model_id", "location", "wis_scaled_relative_skill", "wis", "ae_median_scaled_relative_skill",
+                //  "ae_median", "interval_coverage_50", "interval_coverage_95", "n"]
                 for (const col_name of data.columns) {
                     if (!['model_id', 'n', this.state.selected_disaggregate_by].includes(col_name)) {
                         // This is a score column, so convert values in all rows to float

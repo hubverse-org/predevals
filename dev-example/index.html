@@ -45,6 +45,8 @@ async function _fetchData(target, eval_window, disaggregate_by) {
     } else {
       target_path = `./scores/${target}/${eval_window}/${disaggregate_by}/scores.csv`;
     }
+    console.log(['xx', target, eval_window, disaggregate_by, '->', target_path]);
+    d3.csv(target_path).then((data) => document.xx = data);  /* todo xx */
     return d3.csv(target_path);
 }
 
