@@ -3,40 +3,15 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+import {
+    titleCase,
+    toLowerCaseIfString,
+    hexToRGB,
+    get_round_decimals,
+    parse_coverage_rate,
+    convertDataColumnTypes
+} from "./utils.js";
 
-
-//
-// helper functions
-//
-
-// TODO: move to utils.js
-function titleCase(str) {  // per https://stackoverflow.com/questions/196972/convert-string-to-title-case-with-javascript
-    return str.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
-}
-
-function toLowerCaseIfString(input) {
-    if (typeof input === 'string') {
-        return input.toLowerCase();
-    } else {
-        return input;
-    }
-}
-
-function hexToRGB(hex) {
-    let r = parseInt(hex.substring(1, 3), 16);
-    let g = parseInt(hex.substring(3, 5), 16);
-    let b = parseInt(hex.substring(5, 7), 16);
-    return `rgb(${r}, ${g}, ${b})`;
-}
-
-function get_round_decimals(col_name) {
-    const relative_skill_regex = new RegExp('_scaled_relative_skill$');
-    if (relative_skill_regex.test(col_name)) {
-        return 2;
-    } else {
-        return 1;
-    }
-}
 
 /**
  * `initialize()` helper that builds UI by adding DOM elements to $componentDiv. the UI is one row with two columns:
@@ -116,10 +91,6 @@ function _createUIElements($componentDiv) {
     $componentDiv.empty().append($optionsDiv, $evalDiv);
 }
 
-
-function parse_coverage_rate(score_name) {
-    return parseFloat(score_name.slice(18));
-}
 
 const score_col_name_to_text_map = new Map(
     [
@@ -443,7 +414,6 @@ const App = {
             .catch(error => console.error(`fetchScores(): error: ${error.message}`));
     },
     fetchScoresTableOrPlot(isFetchScoresTable) {
-        const interval_coverage_regex = new RegExp('^interval_coverage_');
         let disaggregate_by;
         if (isFetchScoresTable) {
             // note: '(None)' is our conventional value for no disaggregation
@@ -453,26 +423,13 @@ const App = {
             disaggregate_by = this.state.selected_disaggregate_by;
             this.state.scores_plot = [];  // clear in case of error
         }
-        return this._fetchData(  // Promise
-            this.state.selected_target,
-            this.state.selected_eval_set,
-            disaggregate_by)
+        return this._fetchData(  // a Promise
+            this.state.selected_target,  // ex: 'wk inc flu hosp'
+            this.state.selected_eval_set,  // ex: 'Full season', 'Last 4 weeks'
+            disaggregate_by)  // ex: null, 'horizon', 'location', ...
             .then((data) => {
-                // convert score columns to floats
-                // TODO: extract to helper function for clarity
-                for (const col_name of data.columns) {
-                    if (!['model_id', 'n', this.state.selected_disaggregate_by].includes(col_name)) {
-                        // This is a score column, so convert values in all rows to float
-                        for (let i = 0; i < data.length; i++) {
-                            data[i][col_name] = parseFloat(data[i][col_name]);
-
-                            // If it's an interval coverage column, multiply by 100
-                            if (interval_coverage_regex.test(col_name)) {
-                                data[i][col_name] *= 100;
-                            }
-                       }
-                    }
-                }
+                // do an in-place conversion of score and 'n' columns' data types
+                convertDataColumnTypes(this.state.selected_disaggregate_by, data);
 
                 // update state
                 if (isFetchScoresTable) {
