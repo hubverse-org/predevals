@@ -2,14 +2,6 @@ function titleCase(str) {  // per https://stackoverflow.com/questions/196972/con
     return str.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
 }
 
-function toLowerCaseIfString(input) {
-    if (typeof input === 'string') {
-        return input.toLowerCase();
-    } else {
-        return input;
-    }
-}
-
 function hexToRGB(hex) {
     let r = parseInt(hex.substring(1, 3), 16);
     let g = parseInt(hex.substring(3, 5), 16);
@@ -58,4 +50,4 @@ function convertDataColumnTypes(disaggregateBy, data) {
     }
 }
 
-export {titleCase, toLowerCaseIfString, hexToRGB, get_round_decimals, parse_coverage_rate, convertDataColumnTypes}
+export {titleCase, hexToRGB, get_round_decimals, parse_coverage_rate, convertDataColumnTypes}

@@ -5,7 +5,6 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import {
     titleCase,
-    toLowerCaseIfString,
     hexToRGB,
     get_round_decimals,
     parse_coverage_rate,
@@ -150,8 +149,6 @@ const App = {
         selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
         selected_eval_set: '',
-        sort_models_by: 'model_id',
-        sort_models_direction: 1,
         xaxis_tickvals: [],
         // selected_plot_type: '',
 
@@ -452,6 +449,12 @@ const App = {
     updateTable() {
         const thisState = this.state;
         const $evalTablePane = $('#predeval_table_pane');
+
+        // destroy existing DataTable if it exists
+        if ($.fn.DataTable.isDataTable('#predeval_table')) {
+            $('#predeval_table').DataTable().destroy();
+        }
+
         const $table = $('<table id="predeval_table" class="table table-sm table-striped table-bordered"></table>');
         const $thead = $('<thead></thead>');
         const $tbody = $('<tbody></tbody>');
@@ -459,63 +462,10 @@ const App = {
         const $th = $('<th></th>');
         const $td = $('<td></td>');
 
-        // sort scores
-        // TODO: refactor to a function for sorting scores, shared with plot code
-        // use of d3.ascending() and d3.descending() is verbose,
-        // but it works reliably for all data types
-        // (have not thoroughly explored alternatives)
-        const sort_models_by = this.state.sort_models_by;
-        if (this.state.sort_models_direction > 0) {
-            this.state.scores_table.sort((a, b) => {
-                return d3.ascending(toLowerCaseIfString(a[sort_models_by]),
-                                    toLowerCaseIfString(b[sort_models_by]));
-            });
-        } else {
-            this.state.scores_table.sort((a, b) => {
-                return d3.descending(toLowerCaseIfString(a[sort_models_by]),
-                                     toLowerCaseIfString(b[sort_models_by]));
-            });
-        }
-
         // add header row
         const cols = thisState.scores_table.columns;
         cols.forEach(function (c) {
-            // set up class to use for indicating column sort status
-            let c_selected = c === thisState.sort_models_by;
-            let c_direction = thisState.sort_models_direction;
-            let c_arrow;
-            if (c_selected) {
-                c_arrow = c_direction > 0 ? 'bi bi-caret-up-fill' : 'bi bi-caret-down-fill';
-            } else {
-                c_arrow = 'bi bi-chevron-expand';
-            }
-
-            // add header cell for this column
-            $tr.append(
-                $th.clone()
-                    .hover(
-                        function () {
-                            // on hover, change background color, cursor, and arrow color
-                            $(this).css('background-color', 'rgba(0,0,0,.075)')
-                                .css('cursor', 'pointer');
-                            $(this).find('i')
-                                .addClass('text-primary');
-                        },
-                        function () {
-                            // on exit hover, reset background color, cursor, and arrow color
-                            $(this).css('background-color', '')
-                                .css('cursor', 'default');
-                            $(this).find('i')
-                                .removeClass('text-primary');
-                        }
-                    )
-                    .on('click', function() {
-                        // click column header to sort by that column
-                        App.updateTableSorting(c);
-                    })
-                    .text(score_col_name_to_text(c))
-                    .prepend($(`<i class="bi ${c_arrow}" role="img" aria-label="Sort"></i>`))
-            );
+            $tr.append($th.clone().text(score_col_name_to_text(c)));
         });
         $thead.append($tr);
         $table.append($thead);
@@ -545,18 +495,14 @@ const App = {
 
         // remove any existing table and add the new table to document
         $evalTablePane.empty().append($table);
-    },
-    updateTableSorting(col_name) {
-        // handler for column header click to sort by that column
-        if (this.state.sort_models_by === col_name) {
-            this.state.sort_models_direction *= -1;
-        } else {
-            this.state.sort_models_by = col_name;
-            this.state.sort_models_direction = 1;
-        }
 
-        // updateTable performs data sort and re-renders table
-        this.updateTable();
+        // initialize DataTables
+        $('#predeval_table').DataTable({
+            paging: false,
+            searching: false,
+            info: false,
+            order: [[0, 'asc']]
+        });
     },
 
     //
