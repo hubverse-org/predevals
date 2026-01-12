@@ -3,14 +3,7 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-import {
-    titleCase,
-    toLowerCaseIfString,
-    hexToRGB,
-    get_round_decimals,
-    parse_coverage_rate,
-    convertDataColumnTypes
-} from "./utils.js";
+import {convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, titleCase} from "./utils.js";
 
 
 /**
@@ -105,6 +98,7 @@ const score_col_name_to_text_map = new Map(
         ['se_point_scaled_relative_skill', 'Rel. MSE']
     ]
 )
+
 /**
  * Converts a score column name to a human-readable string.
  * TODO: move to utils.js
@@ -150,8 +144,6 @@ const App = {
         selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
         selected_eval_set: '',
-        sort_models_by: 'model_id',
-        sort_models_direction: 1,
         xaxis_tickvals: [],
         // selected_plot_type: '',
 
@@ -347,7 +339,7 @@ const App = {
             const isFetchBoth = false;   // fetch plot data only; this setting doesn't affect the table
             App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
-        
+
         // user changes selection for metric dropdown
         $('#predeval_metric').on('change', function () {
             App.state.selected_metric = this.value;
@@ -419,7 +411,7 @@ const App = {
             // note: '(None)' is our conventional value for no disaggregation
             disaggregate_by = '(None)';
             this.state.scores_table = [];  // clear in case of error
-        } else{
+        } else {
             disaggregate_by = this.state.selected_disaggregate_by;
             this.state.scores_plot = [];  // clear in case of error
         }
@@ -434,7 +426,7 @@ const App = {
                 // update state
                 if (isFetchScoresTable) {
                     this.state.scores_table = data;
-                } else{
+                } else {
                     this.state.scores_plot = data;
                 }
             })
@@ -452,111 +444,68 @@ const App = {
     updateTable() {
         const thisState = this.state;
         const $evalTablePane = $('#predeval_table_pane');
-        const $table = $('<table id="predeval_table" class="table table-sm table-striped table-bordered"></table>');
-        const $thead = $('<thead></thead>');
-        const $tbody = $('<tbody></tbody>');
-        const $tr = $('<tr></tr>');
-        const $th = $('<th></th>');
-        const $td = $('<td></td>');
 
-        // sort scores
-        // TODO: refactor to a function for sorting scores, shared with plot code
-        // use of d3.ascending() and d3.descending() is verbose,
-        // but it works reliably for all data types
-        // (have not thoroughly explored alternatives)
-        const sort_models_by = this.state.sort_models_by;
-        if (this.state.sort_models_direction > 0) {
-            this.state.scores_table.sort((a, b) => {
-                return d3.ascending(toLowerCaseIfString(a[sort_models_by]),
-                                    toLowerCaseIfString(b[sort_models_by]));
-            });
-        } else {
-            this.state.scores_table.sort((a, b) => {
-                return d3.descending(toLowerCaseIfString(a[sort_models_by]),
-                                     toLowerCaseIfString(b[sort_models_by]));
-            });
+        // destroy existing DataTable if it exists
+        if ($.fn.DataTable.isDataTable('#predeval_table')) {
+            $('#predeval_table').DataTable().destroy();
         }
 
-        // add header row
-        const cols = thisState.scores_table.columns;
-        cols.forEach(function (c) {
-            // set up class to use for indicating column sort status
-            let c_selected = c === thisState.sort_models_by;
-            let c_direction = thisState.sort_models_direction;
-            let c_arrow;
-            if (c_selected) {
-                c_arrow = c_direction > 0 ? 'bi bi-caret-up-fill' : 'bi bi-caret-down-fill';
-            } else {
-                c_arrow = 'bi bi-chevron-expand';
-            }
+        // create the table and add a header row. then let datatables populate the rest of the table directly from
+        // `state.scores_table`
+        const $table = $('<table id="predeval_table" class="table table-sm table-striped table-bordered"></table>');
+        const $thead = $('<thead></thead>');
+        const $tr = $('<tr></tr>');
+        const $th = $('<th></th>');
 
-            // add header cell for this column
-            $tr.append(
-                $th.clone()
-                    .hover(
-                        function () {
-                            // on hover, change background color, cursor, and arrow color
-                            $(this).css('background-color', 'rgba(0,0,0,.075)')
-                                .css('cursor', 'pointer');
-                            $(this).find('i')
-                                .addClass('text-primary');
-                        },
-                        function () {
-                            // on exit hover, reset background color, cursor, and arrow color
-                            $(this).css('background-color', '')
-                                .css('cursor', 'default');
-                            $(this).find('i')
-                                .removeClass('text-primary');
-                        }
-                    )
-                    .on('click', function() {
-                        // click column header to sort by that column
-                        App.updateTableSorting(c);
-                    })
-                    .text(score_col_name_to_text(c))
-                    .prepend($(`<i class="bi ${c_arrow}" role="img" aria-label="Sort"></i>`))
-            );
+        const scoreTableCols = thisState.scores_table.columns;
+        scoreTableCols.forEach(function (columnName) {
+            $tr.append($th.clone().text(score_col_name_to_text(columnName)));
         });
         $thead.append($tr);
         $table.append($thead);
 
-        // add data
-        for (let i = 0; i < thisState.scores_table.length; i++) { // table rows
-            const $tr = $('<tr></tr>');
-            for (let j = 0; j < cols.length; j++) { // table columns
-                const col_name = cols[j];
-                let text_value = thisState.scores_table[i][col_name];
-                if (col_name !== 'model_id' && col_name !== 'n') {
-                    // format score columns
-                    // Note: we only build tables if disaggregate_by is '(None)',
-                    // so we can assume that all columns other than model_id and n are scores
-
-                    // TODO: consider whether to make these formatting behaviors configurable
-                    // TODO: consider refactor to helper function for score formatting
-
-                    // Round to 2 decimal places for relative_skill columns and 1 or all other score columns
-                    text_value = text_value.toFixed(get_round_decimals(col_name));
-                }
-                $tr.append($td.clone().text(text_value));
-            }
-            $tbody.append($tr);
-        }
-        $table.append($tbody);
-
         // remove any existing table and add the new table to document
         $evalTablePane.empty().append($table);
-    },
-    updateTableSorting(col_name) {
-        // handler for column header click to sort by that column
-        if (this.state.sort_models_by === col_name) {
-            this.state.sort_models_direction *= -1;
-        } else {
-            this.state.sort_models_by = col_name;
-            this.state.sort_models_direction = 1;
-        }
 
-        // updateTable performs data sort and re-renders table
-        this.updateTable();
+        // initialize datatable
+        const dtColumns = scoreTableCols.map(columnName => {
+            if ((columnName === 'model_id') || (columnName === 'n')) {
+                // default formatting for non-score columns
+                return {data: columnName};
+            } else {
+                // format score columns by rounding to 2 decimal places for relative_skill columns and 1 or all other
+                // score columns. Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
+                // columns other than model_id and n are scores
+
+                // TODO: consider whether to make these formatting behaviors configurable
+                // TODO: consider refactor to helper function for score formatting
+
+                return {data: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
+            }
+        });
+        $table.DataTable({
+            data: thisState.scores_table,
+            columns: dtColumns,
+            columnControl: ['order', ['search', 'spacer', 'orderAsc', 'orderDesc', 'orderClear']],
+            columnDefs: [
+                {
+                    targets: [0],  // 'model_id'. todo use name not idx?
+                    columnControl: [
+                        'order',
+                        ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear']
+                    ]
+                }
+            ],
+            order: [[0, 'asc']],  // 'model_id'. todo use name not idx?
+            ordering: {
+                indicators: false
+            },
+            paging: false,
+            layout: {
+                topStart: null,
+                topEnd: null
+            },
+        });
     },
 
     //
@@ -674,7 +623,7 @@ const App = {
 
         // group by model
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
-        
+
         // add a line for scores for each model
         for (const [model_id, model_scores] of grouped) {
             // get x and y pairs, not sorted
@@ -822,7 +771,7 @@ const App = {
 
         // group score data by model
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
-        
+
         let x = thisState.xaxis_tickvals; // this.state.selected_disaggregate_by
         let y = Array.from(grouped.keys()); // model_id
         let z = []; // scores on transformed scale (log scale if applicable)
