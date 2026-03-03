@@ -23,7 +23,7 @@ function _createUIElements($componentDiv) {
             `<div class="form-row mb-2">\n` +
             `    <label for="${selectId}" class="col-sm-4 col-form-label pb-1">${label}:</label>\n` +
             `    <div class="col-sm-8">\n` +
-            `        <select id="${selectId}" class="form-control"></select>\n` +
+            `        <select id="${selectId}" class="form-select"></select>\n` +
             `    </div>\n` +
             `</div>`)
     }
@@ -32,7 +32,7 @@ function _createUIElements($componentDiv) {
     //
     // make $optionsDiv (left column)
     //
-    const $optionsDiv = $('<div class="col-md-3 g-col-3" id="predeval_options"></div>');
+    const $optionsDiv = $('<div id="predeval_options" style="width: 25%; flex-shrink: 0; overflow: hidden;"></div>');
 
     // add Outcome, task ID, and Interval selects (form). NB: these are unfilled; their <OPTION>s are added by
     // initializeTargetVarsUI(), initializeTaskIDsUI(), and initializeIntervalsUI(), respectively
@@ -54,24 +54,38 @@ function _createUIElements($componentDiv) {
     $optionsDiv.append($optionsForm);
 
     //
+    // sidebar toggle button - sits between sidebar and main content as a drawer handle
+    //
+    const $sidebarToggle = $(
+        `<button id="predeval_sidebar_toggle" type="button"
+            class="btn btn-sm btn-outline-secondary border-start-0 rounded-end"
+            title="Toggle options panel"
+            aria-expanded="true"
+            aria-controls="predeval_options"
+            style="flex-shrink: 0; width: 1.25rem; height: 2.5rem; padding: 0; margin-top: 0.5rem; margin-right: 0.75rem; align-self: flex-start;">
+            <i class="bi bi-chevron-left" style="font-size: 0.7rem; pointer-events: none;"></i>
+        </button>`
+    );
+
+    //
     // make $evalDiv (right column)
     //
-    const $evalDiv = $('<div class="col-md-9 g-col-9" id="predeval_main"></div>');
+    const $evalDiv = $('<div id="predeval_main" style="flex: 1; min-width: 0;"></div>');
 
     // tabs for table and plot -- these are the tabs for navigation
     const $displayTabs = $('<ul class="nav nav-tabs" id="myTab" role="tablist"></ul>')
-        .append(
-            '<li class="nav-item" role="presentation"><button class="nav-link active" id="predeval_table_tab" data-bs-toggle="tab" data-bs-target="#predeval_table_pane" type="button" role="tab" aria-controls="home" aria-selected="true">Table</button></li>'
-        )
-        .append(
-            '<li class="nav-item" role="presentation"><button class="nav-link" id="predeval_plot_tab" data-bs-toggle="tab" data-bs-target="#predeval_plot_pane" type="button" role="tab" aria-controls="home" aria-selected="true">Plot</button></li>'
-        );
+        .append('<li class="nav-item"><button class="nav-link active" id="predeval_table_tab" ' +
+                'data-bs-toggle="tab" data-bs-target="#predeval_table_pane" type="button" ' +
+                'role="tab" aria-controls="home" aria-selected="true">Table</button></li>')
+        .append('<li class="nav-item"><button class="nav-link" id="predeval_plot_tab" ' +
+                'data-bs-toggle="tab" data-bs-target="#predeval_plot_pane" type="button" ' +
+                'role="tab" aria-controls="home" aria-selected="false">Plot</button></li>');
 
     // tabs for table and plot content -- these contain the content of the tabs
     const $displayTabPanes = $('<div class="tab-content"></div>');
     const $tableTabPane = $('<div class="tab-pane active" id="predeval_table_pane" role="tabpanel" aria-labelledby="predeval_table_tab" tabindex="0"></div>');
     const $plotTabPane = $('<div class="tab-pane" id="predeval_plot_pane" role="tabpanel" aria-labelledby="predeval_plot_tab" tabindex="0"></div>')
-        .append($('<div id="predeval_plotly_div" style="width: 100%; height: 75vh; position: relative;"></div>'));
+        .append($('<div id="predeval_plotly_div" style="height: 75vh;"></div>'));
     $displayTabPanes.append($tableTabPane, $plotTabPane);
 
     // add tabs and panes to $evalDiv
@@ -81,7 +95,9 @@ function _createUIElements($componentDiv) {
     // finish
     //
 
-    $componentDiv.empty().append($optionsDiv, $evalDiv);
+    const $layoutDiv = $('<div class="g-col-12" style="display: flex; align-items: flex-start;"></div>');
+    $layoutDiv.append($optionsDiv, $sidebarToggle, $evalDiv);
+    $componentDiv.empty().append($layoutDiv);
 }
 
 
@@ -364,7 +380,32 @@ const App = {
                 // hide the plot options fieldset
                 $('#predeval_options_plot').fadeOut();
             }
-        })
+        });
+
+        // sidebar toggle button (drawer handle)
+        $('#predeval_sidebar_toggle').on('click', function () {
+            const $btn = $(this);
+            const $icon = $btn.find('i');
+            const $optionsDiv = $('#predeval_options');
+            const isOpen = $btn.attr('aria-expanded') === 'true';
+
+            if (isOpen) {
+                // collapse sidebar
+                $optionsDiv.animate({width: '0px'}, 300);
+                $icon.removeClass('bi-chevron-left').addClass('bi-chevron-right');
+                $btn.attr('aria-expanded', 'false').removeClass('border-start-0 rounded-end');
+            } else {
+                // expand sidebar
+                $optionsDiv.animate({width: '25%'}, 300);
+                $icon.removeClass('bi-chevron-right').addClass('bi-chevron-left');
+                $btn.attr('aria-expanded', 'true').addClass('border-start-0 rounded-end');
+            }
+
+            // resize the plot after the animation completes if the plot tab is active
+            if ($('#predeval_plot_tab').hasClass('active')) {
+                setTimeout(() => App.updatePlot(), 350);
+            }
+        });
     },
 
     //
