@@ -42,16 +42,6 @@ function _createUIElements($componentDiv) {
     $fieldsetGeneral.append(_createFormRow('predeval_target', 'Target'));
     $fieldsetGeneral.append(_createFormRow('predeval_eval_set', 'Evaluation set'));
 
-    // the fieldset for table options is shown by default (table tab is active); hidden when plot tab is selected
-    const $fieldsetTable = $('<fieldset id="predeval_options_table" class="border p-2 mb-2"></fieldset>');
-    $fieldsetTable.append($('<legend style="font-size: 1.2rem; margin: 0;">Table Options</legend>'));
-    $fieldsetTable.append($(
-        `<div class="form-check mb-2">` +
-        `    <input class="form-check-input" type="checkbox" id="predeval_freeze_column">` +
-        `    <label class="form-check-label" style="font-size: 1rem;" for="predeval_freeze_column">Freeze first column</label>` +
-        `</div>`
-    ));
-
     // the fieldset for plot options is hidden by default; it is shown when the plot tab is selected
     const $fieldsetPlot = $('<fieldset id="predeval_options_plot" class="border p-2 mb-2"></fieldset>')
         .hide();
@@ -60,7 +50,7 @@ function _createUIElements($componentDiv) {
     $fieldsetPlot.append(_createFormRow('predeval_disaggregate_by', 'Disaggregate by'));
     $fieldsetPlot.append(_createFormRow('predeval_metric', 'Metric'));
 
-    $optionsForm.append($fieldsetGeneral, $fieldsetTable, $fieldsetPlot);
+    $optionsForm.append($fieldsetGeneral, $fieldsetPlot);
     $optionsDiv.append($optionsForm);
 
     //
@@ -383,20 +373,13 @@ const App = {
                 // plot takes up the full available width and height of its container
                 App.updatePlot();
 
-                // show the plot options fieldset, hide the table options fieldset
+                // show the plot options fieldset
                 $('#predeval_options_plot').fadeIn();
-                $('#predeval_options_table').fadeOut();
             } else {
                 // the table tab has been selected
-                // hide the plot options fieldset, show the table options fieldset
+                // hide the plot options fieldset
                 $('#predeval_options_plot').fadeOut();
-                $('#predeval_options_table').fadeIn();
             }
-        });
-
-        // user toggles freeze first column checkbox
-        $('#predeval_freeze_column').on('change', function () {
-            App.updateTable();
         });
 
         // sidebar toggle button (drawer handle)
@@ -563,11 +546,9 @@ const App = {
                 topStart: null,
                 topEnd: null
             },
+            scrollX: true,
+            fixedColumns: {start: 1},
         };
-        if ($('#predeval_freeze_column').prop('checked')) {
-            dtConfig.scrollX = true;
-            dtConfig.fixedColumns = {start: 1};
-        }
         $table.DataTable(dtConfig);
     },
 
