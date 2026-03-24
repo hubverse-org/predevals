@@ -527,14 +527,11 @@ const App = {
         const dtConfig = {
             data: thisState.scores_table,
             columns: dtColumns,
-            columnControl: ['order', ['search', 'spacer', 'orderAsc', 'orderDesc', 'orderClear']],
+            columnControl: ['order', ['search', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']],
             columnDefs: [
                 {
                     targets: [0],  // 'model_id'. todo use name not idx?
-                    columnControl: [
-                        'order',
-                        ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear']
-                    ]
+                    columnControl: ['order', ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']]
                 }
             ],
             order: [[0, 'asc']],  // 'model_id'. todo use name not idx?
