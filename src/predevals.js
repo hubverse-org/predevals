@@ -294,6 +294,12 @@ const App = {
         const thisState = this.state;
         const selected_target_obj = this.getSelectedTargetObj();
         $disaggregateBySelect.empty();
+
+        // reset selected_disaggregate_by if it is not valid for the new target
+        if (!selected_target_obj.disaggregate_by.includes(thisState.selected_disaggregate_by)) {
+            thisState.selected_disaggregate_by = selected_target_obj.disaggregate_by[0];
+        }
+
         selected_target_obj.disaggregate_by.forEach(function (by) {
             const selected = by === thisState.selected_disaggregate_by ? 'selected' : '';
             const optionNode = `<option value="${by}" ${selected} >${by}</option>`;
@@ -309,7 +315,11 @@ const App = {
         // empty because we're going to re-populate it whenever the target changes
         $metricSelect.empty();
 
-        // TODO: if thisState.selecterd_metric is not in the new selected_target_obj.metrics, set it to the first metric
+        // reset selected_metric if it is not valid for the new target
+        if (!selected_target_obj.metrics.includes(thisState.selected_metric)) {
+            thisState.selected_metric = selected_target_obj.metrics[0];
+        }
+
         selected_target_obj.metrics.forEach(function (metric) {
             const selected = metric === thisState.selected_metric ? 'selected' : '';
             const optionNode = `<option value="${metric}" ${selected} >${score_col_name_to_text(metric)}</option>`;
@@ -489,6 +499,12 @@ const App = {
         // destroy existing DataTable if it exists
         if ($.fn.DataTable.isDataTable('#predeval_table')) {
             $('#predeval_table').DataTable().destroy();
+        }
+
+        // show a message if no data is available (e.g., 404 fetch error for the selected target/eval_set combination)
+        if (!thisState.scores_table.columns) {
+            $evalTablePane.empty().append($('<p class="text-muted p-3">No data available for the selected target and evaluation set.</p>'));
+            return;
         }
 
         // create the table and add a header row. then let datatables populate the rest of the table directly from
