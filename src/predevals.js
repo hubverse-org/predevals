@@ -4,6 +4,7 @@
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import {convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, titleCase} from "./utils.js";
+import {metricDefinitions} from "./metric-definitions.js";
 
 
 /**
@@ -50,7 +51,14 @@ function _createUIElements($componentDiv) {
     $fieldsetPlot.append(_createFormRow('predeval_disaggregate_by', 'Disaggregate by'));
     $fieldsetPlot.append(_createFormRow('predeval_metric', 'Metric'));
 
-    $optionsForm.append($fieldsetGeneral, $fieldsetPlot);
+    // the fieldset for metric definitions is always visible and sits below the other options
+    const $fieldsetGlossary = $('<fieldset id="predeval_options_glossary" class="border p-2 mb-2"></fieldset>');
+    $fieldsetGlossary.append($('<legend style="font-size: 1.2rem; margin: 0; cursor: pointer;" ' +
+        'id="predeval_glossary_legend">Metric Definitions <span id="predeval_glossary_toggle" ' +
+        'style="font-size: 0.8rem; font-weight: normal;">&#9654;</span></legend>'));
+    $fieldsetGlossary.append($('<dl id="predeval_glossary_list" class="mb-0 pt-2"></dl>').hide());
+
+    $optionsForm.append($fieldsetGeneral, $fieldsetPlot, $fieldsetGlossary);
     $optionsDiv.append($optionsForm);
 
     //
@@ -75,11 +83,11 @@ function _createUIElements($componentDiv) {
     // tabs for table and plot -- these are the tabs for navigation
     const $displayTabs = $('<ul class="nav nav-tabs" id="myTab" role="tablist"></ul>')
         .append('<li class="nav-item"><button class="nav-link active" id="predeval_table_tab" ' +
-                'data-bs-toggle="tab" data-bs-target="#predeval_table_pane" type="button" ' +
-                'role="tab" aria-controls="home" aria-selected="true">Table</button></li>')
+            'data-bs-toggle="tab" data-bs-target="#predeval_table_pane" type="button" ' +
+            'role="tab" aria-controls="home" aria-selected="true">Table</button></li>')
         .append('<li class="nav-item"><button class="nav-link" id="predeval_plot_tab" ' +
-                'data-bs-toggle="tab" data-bs-target="#predeval_plot_pane" type="button" ' +
-                'role="tab" aria-controls="home" aria-selected="false">Plot</button></li>');
+            'data-bs-toggle="tab" data-bs-target="#predeval_plot_pane" type="button" ' +
+            'role="tab" aria-controls="home" aria-selected="false">Plot</button></li>');
 
     // tabs for table and plot content -- these contain the content of the tabs
     const $displayTabPanes = $('<div class="tab-content"></div>');
@@ -245,6 +253,7 @@ const App = {
         this.initializePlotTypeUI();
         this.initializeDisaggregateByUI();
         this.initializeMetricUI();
+        this.updateGlossary();
 
         // initialize plotly (right column)
         const plotyDiv = document.getElementById('predeval_plotly_div');
@@ -326,6 +335,29 @@ const App = {
             $metricSelect.append(optionNode);
         });
     },
+    updateGlossary() {
+        // collect metric names (internal) for the current context based on whether the plot tab is active or not
+        let metricNames;
+        if ($('#predeval_plot_tab').hasClass('active')) {
+            metricNames = [this.state.selected_metric];
+        } else {
+            const targetObj = this.getSelectedTargetObj();
+            const allMetrics = (targetObj.metrics || []).concat(targetObj.relative_metrics || []);
+            // deduplicate while preserving order
+            metricNames = [...new Set(allMetrics)];
+        }
+
+        // rebuild the definition list
+        const $dl = $('#predeval_glossary_list');
+        $dl.empty();
+        metricNames.forEach(function (metric, idx) {
+            const humanName = score_col_name_to_text(metric);
+            const [definition, detailsLink] = metricDefinitions[metric] || ['No definition available.', null];
+            const detailsHtml = detailsLink ? ` <a href="${detailsLink}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
+            $dl.append(`<dt class="fw-semibold${idx > 0 ? ' mt-2' : ''}">${humanName}</dt>`);
+            $dl.append(`<dd class="ms-3 mb-0" style="font-size: 0.875rem;">${definition}${detailsHtml}</dd>`);
+        });
+    },
     addEventHandlers() {
         // user changes selection for target dropdown
         $('#predeval_target').on('change', function () {
@@ -333,6 +365,7 @@ const App = {
             // possible values for disaggregate_by and metrics depend on the target
             App.initializeDisaggregateByUI();
             App.initializeMetricUI();
+            App.updateGlossary();
 
             const isFetchFirst = true;  // fetch data before updating display
             const isFetchBoth = true;   // fetch both table and plot data; this is a general setting change
@@ -369,6 +402,7 @@ const App = {
         // user changes selection for metric dropdown
         $('#predeval_metric').on('change', function () {
             App.state.selected_metric = this.value;
+            App.updateGlossary();
 
             const isFetchFirst = false; // no need to fetch data, just update display based on a new column
             const isFetchBoth = false;  // no need to fetch both table and plot data
@@ -390,6 +424,20 @@ const App = {
                 // hide the plot options fieldset
                 $('#predeval_options_plot').fadeOut();
             }
+            App.updateGlossary();
+        });
+
+        // glossary legend click — collapse/expand the definition list
+        $('#predeval_glossary_legend').on('click', function () {
+            const $list = $('#predeval_glossary_list');
+            const $toggle = $('#predeval_glossary_toggle');
+            $list.slideToggle(200, function () {
+                if ($list.is(':visible')) {
+                    $toggle.html('&#9660;');
+                } else {
+                    $toggle.html('&#9654;');
+                }
+            });
         });
 
         // sidebar toggle button (drawer handle)
