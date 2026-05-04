@@ -635,6 +635,19 @@ const App = {
             layout = {title: {text: `No score data found.`}};
         }
 
+        // preserve per-trace visibility (legend clicks) across re-renders
+        if (plotlyDiv.data && plotlyDiv.data.length > 0) {
+            const visibilityByName = {};
+            plotlyDiv.data.forEach(trace => {
+                visibilityByName[trace.name] = trace.visible;
+            });
+            data.forEach(trace => {
+                if (trace.name in visibilityByName) {
+                    trace.visible = visibilityByName[trace.name];
+                }
+            });
+        }
+
         // update plot
         Plotly.react(plotlyDiv, data, layout);
     },
