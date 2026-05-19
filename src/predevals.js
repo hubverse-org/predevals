@@ -138,6 +138,11 @@ function score_col_name_to_text(score_name) {
 }
 
 
+function showDialog(title, message) {
+    window.alert(`${title}\n\n${message}`);
+}
+
+
 //
 // App
 //
@@ -150,6 +155,7 @@ const App = {
     //
 
     _fetchData: null,         // as documented in `initialize()`
+    _initialSortColumn: null,  // from initialize() options['initial_sort_column']
 
 
     //
@@ -209,7 +215,8 @@ const App = {
      * @param {String} componentDiv - id of a DOM node to populate. it must be an empty Bootstrap 4 row
      * @param {Function} _fetchData - function as documented in README.md .
      *   args: isForecast, targetKey, taskIDs, referenceDate
-     * @param {Object} options - predeval initialization options
+     * @param {Object} options - predeval initialization options. see README.md for details and the
+     *   scores.csv column name -> rendered header mapping.
      * @returns {String} - error message String or null if no error
      */
     initialize(componentDiv, _fetchData, options) {
@@ -221,8 +228,19 @@ const App = {
             throw `componentDiv DOM node not found: '${componentDiv}'`;
         }
 
+        // validate options object
+        try {
+            this._validateOptions(options);
+            console.debug('initialize(): passed options are valid');
+        } catch (error) {
+            console.error(`invalid option(s): ${error}`);
+            showDialog('Init failed due to invalid option(s)', error);
+            return error;  // leave display default/blank
+        }
+
         // save static vars
         this._fetchData = _fetchData;
+        this._initialSortColumn = options['initial_sort_column'] || 'model_id';
         this.state.targets = options['targets'];
         this.state.eval_sets = options['eval_sets'];
         this.state.task_id_text = options['task_id_text'];
@@ -245,6 +263,35 @@ const App = {
         this.fetchDataUpdateDisplay(true, true);
 
         return null;  // no error
+    },
+    /**
+     * Validates the `options` argument passed to `initialize()`. Throws a descriptive error string if invalid.
+     */
+    _validateOptions(options) {
+        const errors = [];
+        ['targets', 'eval_sets'].forEach(prop => {
+            if (!(prop in options)) {
+                errors.push(`missing required property: '${prop}'`);
+            }
+        });
+        if (errors.length > 0) {
+            throw `_validateOptions(): ${JSON.stringify(errors)}`;
+        }
+        if ('initial_sort_column' in options) {
+            const colName = options['initial_sort_column'];
+            if (typeof colName !== 'string') {
+                throw `_validateOptions(): 'initial_sort_column' must be a string, got: ${typeof colName}`;
+            }
+            const validColNames = new Set(['model_id', 'n']);
+            options['targets'].forEach(target => {
+                (target.metrics || []).forEach(m => validColNames.add(m));
+                (target.relative_metrics || []).forEach(m => validColNames.add(m));
+            });
+            if (!validColNames.has(colName)) {
+                throw `_validateOptions(): 'initial_sort_column' '${colName}' is not a valid scores.csv column name. ` +
+                    `Valid names: ${JSON.stringify([...validColNames])}`;
+            }
+        }
     },
     initializeUI() {
         // populate options (left column)
@@ -576,7 +623,7 @@ const App = {
         const dtColumns = scoreTableCols.map(columnName => {
             if ((columnName === 'model_id') || (columnName === 'n')) {
                 // default formatting for non-score columns
-                return {data: columnName};
+                return {data: columnName, name: columnName};
             } else {
                 // format score columns by rounding to 2 decimal places for relative_skill columns and 1 or all other
                 // score columns. Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
@@ -585,7 +632,7 @@ const App = {
                 // TODO: consider whether to make these formatting behaviors configurable
                 // TODO: consider refactor to helper function for score formatting
 
-                return {data: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
+                return {data: columnName, name: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
             }
         });
         const dtConfig = {
@@ -594,11 +641,11 @@ const App = {
             columnControl: ['order', ['search', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']],
             columnDefs: [
                 {
-                    targets: [0],  // 'model_id'. todo use name not idx?
+                    targets: scoreTableCols.indexOf('model_id'),
                     columnControl: ['order', ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']]
                 }
             ],
-            order: [[0, 'asc']],  // 'model_id'. todo use name not idx?
+            order: [{name: this._initialSortColumn, dir: 'asc'}],
             ordering: {
                 indicators: false
             },

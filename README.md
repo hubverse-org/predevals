@@ -1,6 +1,31 @@
 # predevals
 A JavaScript module for interactive exploration of forecast evaluations.
 
+# `App.initialize()` options
+
+The `options` object passed to `App.initialize()` supports the following optional properties:
+
+## `initial_sort_column`
+
+Controls which column `#predeval_table` initially sorts on. Defaults to `model_id` (the Model column).
+
+Specify the **`scores.csv` column name**, not the rendered column header. For example, pass `'wis'` to sort by the column displayed as `'WIS'`. The mapping of `scores.csv` column names to rendered headers is (via `score_col_name_to_text()`):
+
+| `scores.csv` column name          | Rendered header           |
+|-----------------------------------|---------------------------|
+| `model_id`                        | Model                     |
+| `n`                               | N                         |
+| `wis`                             | WIS                       |
+| `wis_scaled_relative_skill`       | Rel. WIS                  |
+| `ae_median`                       | MAE                       |
+| `ae_median_scaled_relative_skill` | Rel. MAE                  |
+| `interval_coverage_50`            | 50% Cov.                  |
+| *(other metrics)*                 | title-cased internal name |
+
+The value is validated against all metrics and relative metrics defined across `options.targets`. Passing an unrecognized name raises an error via `_validateOptions()`.
+
+**Limitation:** The initial sort is always ascending. For most metrics (e.g., `wis`, `ae_median`) ascending order is sensible, but for coverage metrics like `interval_coverage_50` - where higher values are better - descending order would be more natural. Sorting direction is not currently configurable.
+
 # Development
 
 ## Installing dev requirements
