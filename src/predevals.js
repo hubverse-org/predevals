@@ -5,6 +5,7 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import {convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, titleCase} from "./utils.js";
 import {metricDefinitions} from "./metric-definitions.js";
+import _validateOptions from "./validation.js";
 
 
 /**
@@ -138,6 +139,16 @@ function score_col_name_to_text(score_name) {
 }
 
 
+function showDialog(title, message) {
+    // window.alert() is used here rather than a Bootstrap modal to avoid the associated complexity: Bootstrap JS must
+    // be loaded, the modal HTML must already exist in the DOM, z-index/stacking- context conflicts can hide the dialog,
+    // and text wrapping/styling varies across host page themes. For init errors — which are developer-facing and should
+    // be rare — the simplicity of alert() outweighs the UX cost, especially since most consumers are expected to
+    // validate options before calling initialize().
+    window.alert(`${title}\n\n${message}`);
+}
+
+
 //
 // App
 //
@@ -150,6 +161,7 @@ const App = {
     //
 
     _fetchData: null,         // as documented in `initialize()`
+    _initialSortColumn: null,  // from initialize() options['initial_sort_column']
 
 
     //
@@ -209,7 +221,8 @@ const App = {
      * @param {String} componentDiv - id of a DOM node to populate. it must be an empty Bootstrap 4 row
      * @param {Function} _fetchData - function as documented in README.md .
      *   args: isForecast, targetKey, taskIDs, referenceDate
-     * @param {Object} options - predeval initialization options
+     * @param {Object} options - predeval initialization options. see README.md for details and the
+     *   scores.csv column name -> rendered header mapping.
      * @returns {String} - error message String or null if no error
      */
     initialize(componentDiv, _fetchData, options) {
@@ -221,8 +234,19 @@ const App = {
             throw `componentDiv DOM node not found: '${componentDiv}'`;
         }
 
+        // validate options object
+        try {
+            _validateOptions(options);
+            console.debug('initialize(): passed options are valid');
+        } catch (error) {
+            console.error(`invalid option(s): ${error}`);
+            showDialog('Init failed due to invalid option(s)', error);
+            return error;  // leave display default/blank
+        }
+
         // save static vars
         this._fetchData = _fetchData;
+        this._initialSortColumn = options['initial_sort_column'] || 'model_id';
         this.state.targets = options['targets'];
         this.state.eval_sets = options['eval_sets'];
         this.state.task_id_text = options['task_id_text'];
@@ -576,7 +600,7 @@ const App = {
         const dtColumns = scoreTableCols.map(columnName => {
             if ((columnName === 'model_id') || (columnName === 'n')) {
                 // default formatting for non-score columns
-                return {data: columnName};
+                return {data: columnName, name: columnName};
             } else {
                 // format score columns by rounding to 2 decimal places for relative_skill columns and 1 or all other
                 // score columns. Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
@@ -585,20 +609,26 @@ const App = {
                 // TODO: consider whether to make these formatting behaviors configurable
                 // TODO: consider refactor to helper function for score formatting
 
-                return {data: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
+                return {data: columnName, name: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
             }
         });
+        let sortColumn = this._initialSortColumn;
+        if (!scoreTableCols.includes(sortColumn)) {
+            console.warn(`updateTable(): initial_sort_column '${sortColumn}' not in current table columns; defaulting to 'model_id'`);
+            sortColumn = 'model_id';
+        }
+
         const dtConfig = {
             data: thisState.scores_table,
             columns: dtColumns,
             columnControl: ['order', ['search', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']],
             columnDefs: [
                 {
-                    targets: [0],  // 'model_id'. todo use name not idx?
+                    targets: scoreTableCols.indexOf('model_id'),
                     columnControl: ['order', ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']]
                 }
             ],
-            order: [[0, 'asc']],  // 'model_id'. todo use name not idx?
+            order: [{name: sortColumn, dir: 'asc'}],
             ordering: {
                 indicators: false
             },
