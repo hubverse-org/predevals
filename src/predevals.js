@@ -5,6 +5,7 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import {convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, titleCase} from "./utils.js";
 import {metricDefinitions} from "./metric-definitions.js";
+import _validateOptions from "./validation.js";
 
 
 /**
@@ -139,6 +140,11 @@ function score_col_name_to_text(score_name) {
 
 
 function showDialog(title, message) {
+    // window.alert() is used here rather than a Bootstrap modal to avoid the associated complexity: Bootstrap JS must
+    // be loaded, the modal HTML must already exist in the DOM, z-index/stacking- context conflicts can hide the dialog,
+    // and text wrapping/styling varies across host page themes. For init errors — which are developer-facing and should
+    // be rare — the simplicity of alert() outweighs the UX cost, especially since most consumers are expected to
+    // validate options before calling initialize().
     window.alert(`${title}\n\n${message}`);
 }
 
@@ -230,7 +236,7 @@ const App = {
 
         // validate options object
         try {
-            this._validateOptions(options);
+            _validateOptions(options);
             console.debug('initialize(): passed options are valid');
         } catch (error) {
             console.error(`invalid option(s): ${error}`);
@@ -263,35 +269,6 @@ const App = {
         this.fetchDataUpdateDisplay(true, true);
 
         return null;  // no error
-    },
-    /**
-     * Validates the `options` argument passed to `initialize()`. Throws a descriptive error string if invalid.
-     */
-    _validateOptions(options) {
-        const errors = [];
-        ['targets', 'eval_sets'].forEach(prop => {
-            if (!(prop in options)) {
-                errors.push(`missing required property: '${prop}'`);
-            }
-        });
-        if (errors.length > 0) {
-            throw `_validateOptions(): ${JSON.stringify(errors)}`;
-        }
-        if ('initial_sort_column' in options) {
-            const colName = options['initial_sort_column'];
-            if (typeof colName !== 'string') {
-                throw `_validateOptions(): 'initial_sort_column' must be a string, got: ${typeof colName}`;
-            }
-            const validColNames = new Set(['model_id', 'n']);
-            options['targets'].forEach(target => {
-                (target.metrics || []).forEach(m => validColNames.add(m));
-                (target.relative_metrics || []).forEach(m => validColNames.add(m));
-            });
-            if (!validColNames.has(colName)) {
-                throw `_validateOptions(): 'initial_sort_column' '${colName}' is not a valid scores.csv column name. ` +
-                    `Valid names: ${JSON.stringify([...validColNames])}`;
-            }
-        }
     },
     initializeUI() {
         // populate options (left column)
@@ -635,6 +612,12 @@ const App = {
                 return {data: columnName, name: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
             }
         });
+        let sortColumn = this._initialSortColumn;
+        if (!scoreTableCols.includes(sortColumn)) {
+            console.warn(`updateTable(): initial_sort_column '${sortColumn}' not in current table columns; defaulting to 'model_id'`);
+            sortColumn = 'model_id';
+        }
+
         const dtConfig = {
             data: thisState.scores_table,
             columns: dtColumns,
@@ -645,7 +628,7 @@ const App = {
                     columnControl: ['order', ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']]
                 }
             ],
-            order: [{name: this._initialSortColumn, dir: 'asc'}],
+            order: [{name: sortColumn, dir: 'asc'}],
             ordering: {
                 indicators: false
             },

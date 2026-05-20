@@ -24,7 +24,9 @@ Specify the **`scores.csv` column name**, not the rendered column header. For ex
 
 The value is validated against all metrics and relative metrics defined across `options.targets`. Passing an unrecognized name raises an error via `_validateOptions()`.
 
-**Limitation:** The initial sort is always ascending. For most metrics (e.g., `wis`, `ae_median`) ascending order is sensible, but for coverage metrics like `interval_coverage_50` - where higher values are better - descending order would be more natural. Sorting direction is not currently configurable.
+**Limitations:**
+- The sort direction is always ascending. For most metrics (e.g., `wis`, `ae_median`) ascending order is sensible, but for coverage metrics like `interval_coverage_50` - where higher values are better - descending order would be more natural. Sorting direction is not currently configurable.
+- The sort is re-applied every time the table is rebuilt (e.g., when the user changes the target or evaluation set). Any manual column sort the user has applied will be reset on target/eval-set change.
 
 # Development
 
