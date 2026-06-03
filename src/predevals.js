@@ -133,6 +133,16 @@ const score_col_name_to_text_map = new Map(
 )
 
 /**
+ * Coerce a `string | array | null | undefined` field into an array. Used to normalize target
+ * fields whose schema (`inst/schema/v1.0.1/config_schema.json`) allows either form.
+ */
+function _toArray(value) {
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
+}
+
+
+/**
  * Converts a score column name to a human-readable string.
  * TODO: move to utils.js
  * @param {String} score_col_name - the name of a column in a scores data object
@@ -234,9 +244,16 @@ const App = {
             throw `componentDiv DOM node not found: '${componentDiv}'`;
         }
 
-        // save static vars
+        // save static vars. Normalize fields that the schema declares as `string | array`
+        // (metrics, relative_metrics, disaggregate_by) to arrays so the rest of the code can
+        // assume array semantics. See https://github.com/hubverse-org/predevals/issues/63.
         this._fetchData = _fetchData;
-        this.state.targets = options['targets'];
+        this.state.targets = options['targets'].map((target) => ({
+            ...target,
+            metrics: _toArray(target.metrics),
+            relative_metrics: _toArray(target.relative_metrics),
+            disaggregate_by: _toArray(target.disaggregate_by),
+        }));
         this.state.eval_sets = options['eval_sets'];
         this.state.task_id_text = options['task_id_text'];
 
