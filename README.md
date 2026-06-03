@@ -24,8 +24,7 @@ The `dev-example` folder has a minimal working example for local development, ba
 ```bash
 npm run build
 cp dist/predevals.bundle.js dev-example
-cd dev-example
-python3 -m http.server 8000
+python3 -m http.server 8000 -d dev-example/
 ```
 
 Then open http://127.0.0.1:8000/ in your web browser. As you make changes to `src/predevals.js`, rebuild and recopy the updated predevals.bundle.js into the `dev-example` folder and then refresh the page in your browser.
