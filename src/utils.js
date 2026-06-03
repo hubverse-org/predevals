@@ -11,7 +11,7 @@ function hexToRGB(hex) {
 
 function get_round_decimals(col_name) {
     const relative_skill_regex = new RegExp('_scaled_relative_skill$');
-    if (relative_skill_regex.test(col_name)) {
+    if (relative_skill_regex.test(base_col_name(col_name))) {
         return 2;
     } else {
         return 1;
@@ -20,6 +20,32 @@ function get_round_decimals(col_name) {
 
 function parse_coverage_rate(score_name) {
     return parseFloat(score_name.slice(18));
+}
+
+/**
+ * Split a transformed-scale column name like `wis__log` into its base metric
+ * (`"wis"`) and transform label (`"log"`). Returns `null` for legacy column
+ * names without `__`, which the rest of the app can render as-is.
+ *
+ * @param col_name {String} - a column name from `scores.csv` / `predevals-options.json`
+ * @returns {{base: String, label: String} | null}
+ */
+function split_transformed_col_name(col_name) {
+    const sepIdx = col_name.indexOf('__');
+    if (sepIdx === -1) return null;
+    return {base: col_name.slice(0, sepIdx), label: col_name.slice(sepIdx + 2)};
+}
+
+/**
+ * Resolve a column name to its base metric: the part before `__` for a
+ * transformed-scale column, or the input unchanged for any other column.
+ *
+ * @param col_name {String}
+ * @returns {String}
+ */
+function base_col_name(col_name) {
+    const split = split_transformed_col_name(col_name);
+    return split ? split.base : col_name;
 }
 
 /**
@@ -50,4 +76,4 @@ function convertDataColumnTypes(disaggregateBy, data) {
     }
 }
 
-export {titleCase, hexToRGB, get_round_decimals, parse_coverage_rate, convertDataColumnTypes}
+export {titleCase, hexToRGB, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, convertDataColumnTypes}

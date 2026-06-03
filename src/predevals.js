@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-import {convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, titleCase} from "./utils.js";
+import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase} from "./utils.js";
 import {metricDefinitions} from "./metric-definitions.js";
 
 
@@ -51,6 +51,15 @@ function _createUIElements($componentDiv) {
     $fieldsetPlot.append(_createFormRow('predeval_disaggregate_by', 'Disaggregate by'));
     $fieldsetPlot.append(_createFormRow('predeval_metric', 'Metric'));
 
+    // the fieldset for the per-target transform description; hidden when the
+    // selected target has no transform applied
+    const $fieldsetTransform = $('<fieldset id="predeval_options_transform" class="border p-2 mb-2"></fieldset>')
+        .hide();
+    $fieldsetTransform.append($('<legend style="font-size: 1.2rem; margin: 0; cursor: pointer;" ' +
+        'id="predeval_transform_legend">Transformation Definition <span id="predeval_transform_toggle" ' +
+        'style="font-size: 0.8rem; font-weight: normal;">&#9654;</span></legend>'));
+    $fieldsetTransform.append($('<dl id="predeval_transform_description" class="mb-0 pt-2"></dl>').hide());
+
     // the fieldset for metric definitions is always visible and sits below the other options
     const $fieldsetGlossary = $('<fieldset id="predeval_options_glossary" class="border p-2 mb-2"></fieldset>');
     $fieldsetGlossary.append($('<legend style="font-size: 1.2rem; margin: 0; cursor: pointer;" ' +
@@ -58,7 +67,7 @@ function _createUIElements($componentDiv) {
         'style="font-size: 0.8rem; font-weight: normal;">&#9654;</span></legend>'));
     $fieldsetGlossary.append($('<dl id="predeval_glossary_list" class="mb-0 pt-2"></dl>').hide());
 
-    $optionsForm.append($fieldsetGeneral, $fieldsetPlot, $fieldsetGlossary);
+    $optionsForm.append($fieldsetGeneral, $fieldsetPlot, $fieldsetTransform, $fieldsetGlossary);
     $optionsDiv.append($optionsForm);
 
     //
@@ -131,10 +140,14 @@ const score_col_name_to_text_map = new Map(
 function score_col_name_to_text(score_name) {
     const interval_coverage_regex = new RegExp('^interval_coverage_');
     if (interval_coverage_regex.test(score_name)) {
+        // interval_coverage_* are transform-invariant per the
+        // predevals-options.json contract, so no `__<label>` variant exists.
         return `${parse_coverage_rate(score_name)}\% Cov.`;
-    } else {
-        return score_col_name_to_text_map.get(score_name) || titleCase(score_name);
     }
+    const split = split_transformed_col_name(score_name);
+    const base = split ? split.base : score_name;
+    const baseText = score_col_name_to_text_map.get(base) || titleCase(base);
+    return split ? `${baseText} (${split.label})` : baseText;
 }
 
 
@@ -253,6 +266,7 @@ const App = {
         this.initializePlotTypeUI();
         this.initializeDisaggregateByUI();
         this.initializeMetricUI();
+        this.updateTransformPanel();
         this.updateGlossary();
 
         // initialize plotly (right column)
@@ -347,16 +361,42 @@ const App = {
             metricNames = [...new Set(allMetrics)];
         }
 
+        // Strip any `__<label>` transformed-scale suffix and dedupe to base
+        // metrics: their definitions are the same as on the natural scale, and
+        // the Transformation Definition panel covers the `(label)` story once
+        // per target.
+        const baseNames = [...new Set(metricNames.map(base_col_name))];
+
         // rebuild the definition list
         const $dl = $('#predeval_glossary_list');
         $dl.empty();
-        metricNames.forEach(function (metric, idx) {
+        baseNames.forEach(function (metric, idx) {
             const humanName = score_col_name_to_text(metric);
             const [definition, detailsLink] = metricDefinitions[metric] || ['No definition available.', null];
             const detailsHtml = detailsLink ? ` <a href="${detailsLink}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
             $dl.append(`<dt class="fw-semibold${idx > 0 ? ' mt-2' : ''}">${humanName}</dt>`);
             $dl.append(`<dd class="ms-3 mb-0" style="font-size: 0.875rem;">${definition}${detailsHtml}</dd>`);
         });
+    },
+    updateTransformPanel() {
+        // show/hide and populate the Transformation Definition sidebar panel
+        // based on whether the currently selected target has a resolved
+        // `transform` block in predevals-options.json. Mirrors the glossary
+        // `<dt>`/`<dd>` styling so the bolded label (e.g. "log") matches the
+        // parenthetical in the metric dropdown entries (e.g. "WIS (log)").
+        const $fieldset = $('#predeval_options_transform');
+        const transform = this.getSelectedTargetObj().transform;
+        if (!transform) {
+            $fieldset.hide();
+            return;
+        }
+        const $dl = $('#predeval_transform_description');
+        $dl.empty();
+        // .text() (not template-literal interpolation) so hub-author-supplied
+        // label/description strings can't break markup or inject HTML.
+        $dl.append($('<dt class="fw-semibold"></dt>').text(transform.label));
+        $dl.append($('<dd class="ms-3 mb-0" style="font-size: 0.875rem;"></dd>').text(transform.description || ''));
+        $fieldset.show();
     },
     addEventHandlers() {
         // user changes selection for target dropdown
@@ -365,6 +405,7 @@ const App = {
             // possible values for disaggregate_by and metrics depend on the target
             App.initializeDisaggregateByUI();
             App.initializeMetricUI();
+            App.updateTransformPanel();
             App.updateGlossary();
 
             const isFetchFirst = true;  // fetch data before updating display
@@ -433,6 +474,19 @@ const App = {
             const $toggle = $('#predeval_glossary_toggle');
             $list.slideToggle(200, function () {
                 if ($list.is(':visible')) {
+                    $toggle.html('&#9660;');
+                } else {
+                    $toggle.html('&#9654;');
+                }
+            });
+        });
+
+        // transform definition legend click — collapse/expand the description
+        $('#predeval_transform_legend').on('click', function () {
+            const $desc = $('#predeval_transform_description');
+            const $toggle = $('#predeval_transform_toggle');
+            $desc.slideToggle(200, function () {
+                if ($desc.is(':visible')) {
                     $toggle.html('&#9660;');
                 } else {
                     $toggle.html('&#9654;');
@@ -780,7 +834,7 @@ const App = {
         const interval_coverage_regex = new RegExp('^interval_coverage_');
         const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
         const relative_skill_regex = new RegExp('_scaled_relative_skill$');
-        const is_rel_skill_metric = relative_skill_regex.test(thisState.selected_metric);
+        const is_rel_skill_metric = relative_skill_regex.test(base_col_name(thisState.selected_metric));
 
         let pd = [];
 
