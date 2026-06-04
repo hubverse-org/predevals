@@ -378,12 +378,21 @@ const App = {
             $dl.append(`<dd class="ms-3 mb-0" style="font-size: 0.875rem;">${definition}${detailsHtml}</dd>`);
         });
     },
+    /**
+     * Show/hide and populate the Transformation Definition sidebar panel
+     * based on the selected target's resolved `transform` block.
+     *
+     * Contract: when `transform` is present in predevals-options.json,
+     * hubPredEvalsData's `generate_predevals_options()` guarantees `fun`,
+     * `label`, `append`, and `description` are all populated (`label` falls
+     * back to `fun`; `description` is composed from the transform-function
+     * catalog). The `if (!transform)` check is therefore sufficient — no
+     * per-field undefined guards required.
+     */
     updateTransformPanel() {
-        // show/hide and populate the Transformation Definition sidebar panel
-        // based on whether the currently selected target has a resolved
-        // `transform` block in predevals-options.json. Mirrors the glossary
-        // `<dt>`/`<dd>` styling so the bolded label (e.g. "log") matches the
-        // parenthetical in the metric dropdown entries (e.g. "WIS (log)").
+        // Mirrors the glossary `<dt>`/`<dd>` styling so the bolded label
+        // (e.g. "log") matches the parenthetical in the metric dropdown
+        // entries (e.g. "WIS (log)").
         const $fieldset = $('#predeval_options_transform');
         const transform = this.getSelectedTargetObj().transform;
         if (!transform) {
