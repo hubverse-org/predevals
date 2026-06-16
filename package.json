@@ -1,6 +1,6 @@
 {
   "name": "predevals",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
   "devDependencies": {
     "d3": "^7.9.0",
