@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase} from "./utils.js";
+import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase, toArray} from "./utils.js";
 import {metricDefinitions} from "./metric-definitions.js";
 
 
@@ -133,16 +133,6 @@ const score_col_name_to_text_map = new Map(
 )
 
 /**
- * Coerce a `string | array | null | undefined` field into an array. Used to normalize target
- * fields whose schema (`inst/schema/v1.0.1/config_schema.json`) allows either form.
- */
-function _toArray(value) {
-    if (value == null) return [];
-    return Array.isArray(value) ? value : [value];
-}
-
-
-/**
  * Converts a score column name to a human-readable string.
  * TODO: move to utils.js
  * @param {String} score_col_name - the name of a column in a scores data object
@@ -250,9 +240,9 @@ const App = {
         this._fetchData = _fetchData;
         this.state.targets = options['targets'].map((target) => ({
             ...target,
-            metrics: _toArray(target.metrics),
-            relative_metrics: _toArray(target.relative_metrics),
-            disaggregate_by: _toArray(target.disaggregate_by),
+            metrics: toArray(target.metrics),
+            relative_metrics: toArray(target.relative_metrics),
+            disaggregate_by: toArray(target.disaggregate_by),
         }));
         this.state.eval_sets = options['eval_sets'];
         this.state.task_id_text = options['task_id_text'];

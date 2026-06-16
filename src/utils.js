@@ -52,7 +52,7 @@ function base_col_name(col_name) {
  * Does an in-place conversion of `data`'s score and 'n' columns' data types: Scores convert to floats, and 'n' to ints.
  *
  * @param disaggregateBy {String} - an `App.state.selected_disaggregate_by` value
- * @param data {array} - as returned by _fetchData() - a d3.csv() object
+ * @param data {Array} - as returned by _fetchData() - a d3.csv() object
  */
 function convertDataColumnTypes(disaggregateBy, data) {
     const interval_coverage_regex = new RegExp('^interval_coverage_');
@@ -76,4 +76,16 @@ function convertDataColumnTypes(disaggregateBy, data) {
     }
 }
 
-export {titleCase, hexToRGB, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, convertDataColumnTypes}
+/**
+ * Coerce a `string | array | null | undefined` field into an array. Used to normalize target
+ * fields whose schema (`inst/schema/v1.0.1/config_schema.json`) allows either form.
+ *
+ * @param value {String|Array|null|undefined} - the field value to coerce
+ * @returns {Array} - `value` as an array (empty if null/undefined)
+ */
+function toArray(value) {
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
+}
+
+export {titleCase, hexToRGB, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, convertDataColumnTypes, toArray}
