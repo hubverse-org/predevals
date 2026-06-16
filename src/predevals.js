@@ -646,7 +646,7 @@ const App = {
         const dtColumns = scoreTableCols.map(columnName => {
             if ((columnName === 'model_id') || (columnName === 'n')) {
                 // default formatting for non-score columns
-                return {data: columnName};
+                return {data: columnName, name: columnName};
             } else {
                 // format score columns by rounding to 2 decimal places for relative_skill columns and 1 or all other
                 // score columns. Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
@@ -655,20 +655,24 @@ const App = {
                 // TODO: consider whether to make these formatting behaviors configurable
                 // TODO: consider refactor to helper function for score formatting
 
-                return {data: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
+                return {data: columnName, name: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
             }
         });
+        const targetObj = this.getSelectedTargetObj();
+        const firstMetric = targetObj && targetObj.metrics && targetObj.metrics.length > 0 ? targetObj.metrics[0] : null;
+        const sortColName = (firstMetric && scoreTableCols.includes(firstMetric)) ? firstMetric : 'model_id';
+        const modelIdIdx = scoreTableCols.indexOf('model_id');
         const dtConfig = {
             data: thisState.scores_table,
             columns: dtColumns,
             columnControl: ['order', ['search', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']],
-            columnDefs: [
+            columnDefs: modelIdIdx >= 0 ? [  // -1 if 'model_id' wasn't found
                 {
-                    targets: [0],  // 'model_id'. todo use name not idx?
+                    targets: [modelIdIdx],
                     columnControl: ['order', ['searchList', 'spacer', 'orderAsc', 'orderDesc', 'orderClear', 'spacer', 'colVis']]
                 }
-            ],
-            order: [[0, 'asc']],  // 'model_id'. todo use name not idx?
+            ] : [],
+            order: [{name: sortColName, dir: 'asc'}],
             ordering: {
                 indicators: false
             },
