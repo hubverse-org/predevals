@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase} from "./utils.js";
+import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase, toArray} from "./utils.js";
 import {metricDefinitions} from "./metric-definitions.js";
 
 
@@ -234,9 +234,16 @@ const App = {
             throw `componentDiv DOM node not found: '${componentDiv}'`;
         }
 
-        // save static vars
+        // save static vars. Normalize fields that the schema declares as `string | array`
+        // (metrics, relative_metrics, disaggregate_by) to arrays so the rest of the code can
+        // assume array semantics. See https://github.com/hubverse-org/predevals/issues/63.
         this._fetchData = _fetchData;
-        this.state.targets = options['targets'];
+        this.state.targets = options['targets'].map((target) => ({
+            ...target,
+            metrics: toArray(target.metrics),
+            relative_metrics: toArray(target.relative_metrics),
+            disaggregate_by: toArray(target.disaggregate_by),
+        }));
         this.state.eval_sets = options['eval_sets'];
         this.state.task_id_text = options['task_id_text'];
 
