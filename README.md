@@ -29,6 +29,18 @@ python3 -m http.server 8000 -d dev-example/
 
 Then open http://127.0.0.1:8000/ in your web browser. As you make changes to `src/predevals.js`, rebuild and recopy the updated predevals.bundle.js into the `dev-example` folder and then refresh the page in your browser.
 
+## Running unit tests
+
+We use [QUnit](https://qunitjs.com/) for our unit tests. To run the tests, execute the `package.json` `test` script: `npm run test`. You should see output at the bottom like this (the pass count grows as tests are added):
+
+```bash
+...
+# pass 16
+# skip 0
+# todo 0
+# fail 0
+```
+
 ## Versioning
 
 We follow a `-dev` prerelease convention for the `version` field in `package.json`:
