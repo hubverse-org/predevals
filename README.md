@@ -29,6 +29,18 @@ python3 -m http.server 8000 -d dev-example/
 
 Then open http://127.0.0.1:8000/ in your web browser. As you make changes to `src/predevals.js`, rebuild and recopy the updated predevals.bundle.js into the `dev-example` folder and then refresh the page in your browser.
 
+## Versioning
+
+We follow a `-dev` prerelease convention for the `version` field in `package.json`:
+
+- **Between releases**, `main` carries a `-dev` suffix on the next expected version (e.g. `1.2.1-dev` after tagging `v1.2.0`).
+- **Feature PRs do not touch the version.** The bump (patch / minor / major per [SemVer](https://semver.org/)) is decided at release time based on what landed.
+- **The release PR** drops `-dev` and sets the final version (e.g. `1.2.0`).
+- **After release**, a follow-up PR bumps to the next `-dev` (e.g. `1.2.1-dev`).
+
+> [!NOTE]
+> End users load the bundle from a Git **tag** via [jsDelivr](https://www.jsdelivr.com/) (the `@v1` float resolves to the latest `v1.x.y` tag). The `version` field in `package.json` is not what gets served — it's a convention for developers to track the next release, so keep it in step with the tags.
+
 ## Creating a release
 
 ### Packaging the component
