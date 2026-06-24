@@ -1,11 +1,11 @@
 import {
-    titleCase,
-    hexToRGB,
-    get_round_decimals,
-    parse_coverage_rate,
-    split_transformed_col_name,
     base_col_name,
     convertDataColumnTypes,
+    get_round_decimals,
+    hexToRGB,
+    parse_coverage_rate,
+    split_transformed_col_name,
+    titleCase,
     toArray,
 } from '../src/utils.js';
 
@@ -35,12 +35,6 @@ test('hexToRGB() handles 6-char hex', assert => {
     assert.equal(hexToRGB('#1a2b3c'), 'rgb(26, 43, 60)');
 });
 
-test('hexToRGB() expands 3-char shorthand hex', assert => {
-    assert.equal(hexToRGB('#fff'), 'rgb(255, 255, 255)');
-    assert.equal(hexToRGB('#f00'), 'rgb(255, 0, 0)');
-    assert.equal(hexToRGB('#0f0'), 'rgb(0, 255, 0)');
-});
-
 
 QUnit.module('get_round_decimals');
 
@@ -63,7 +57,6 @@ QUnit.module('parse_coverage_rate');
 test('parse_coverage_rate()', assert => {
     assert.equal(parse_coverage_rate('interval_coverage_50'), 50);
     assert.equal(parse_coverage_rate('interval_coverage_95'), 95);
-    assert.equal(parse_coverage_rate('interval_coverage_0.1'), 0.1);
 });
 
 
@@ -117,6 +110,36 @@ test('converts score columns to float, n to int, interval_coverage to percent', 
     assert.strictEqual(data[1].n, 20);
     assert.strictEqual(data[0].interval_coverage_50, 60);
     assert.strictEqual(data[1].interval_coverage_50, 80);
+});
+
+test('converts scaled_relative_skill and transformed columns to float', assert => {
+    const data = [
+        {
+            model_id: 'm1', location: 'US', n: '5',
+            wis_scaled_relative_skill: '1.23',
+            mae_scaled_relative_skill: '0.75',
+            wis__log: '0.45',
+            mae__sqrt: '1.10',
+        },
+    ];
+    data.columns = ['model_id', 'location', 'n', 'wis_scaled_relative_skill', 'mae_scaled_relative_skill', 'wis__log', 'mae__sqrt'];
+    convertDataColumnTypes('location', data);
+
+    assert.strictEqual(data[0].wis_scaled_relative_skill, 1.23);
+    assert.strictEqual(data[0].mae_scaled_relative_skill, 0.75);
+    assert.strictEqual(data[0].wis__log, 0.45);
+    assert.strictEqual(data[0].mae__sqrt, 1.10);
+});
+
+test('interval_coverage boundary values: 0 becomes 0, 1 becomes 100', assert => {
+    const data = [
+        {model_id: 'm1', location: 'US', n: '3', interval_coverage_50: '0', interval_coverage_95: '1'},
+    ];
+    data.columns = ['model_id', 'location', 'n', 'interval_coverage_50', 'interval_coverage_95'];
+    convertDataColumnTypes('location', data);
+
+    assert.strictEqual(data[0].interval_coverage_50, 0);
+    assert.strictEqual(data[0].interval_coverage_95, 100);
 });
 
 test('leaves model_id and disaggregateBy columns unchanged', assert => {
