@@ -9,14 +9,52 @@ function hexToRGB(hex) {
     return `rgb(${r}, ${g}, ${b})`;
 }
 
-function get_round_decimals(col_name) {
+/**
+ * Return the number of decimal places to use when rendering a score column.
+ *
+ * - `*_scaled_relative_skill` columns always use 2 decimal places.
+ * - `interval_coverage_*` columns always use 1 (values are 0–100 percentages).
+ * - All other columns: when `values` is supplied, returns the minimum decimals
+ *   needed so that no non-zero value rounds to zero (see `min_decimals_for_values`);
+ *   otherwise falls back to 1.
+ *
+ * @param {string} col_name
+ * @param {Array<number>|null} [values=null]
+ * @returns {number}
+ */
+function get_round_decimals(col_name, values = null) {
     const relative_skill_regex = new RegExp('_scaled_relative_skill$');
     if (relative_skill_regex.test(base_col_name(col_name))) {
         return 2;
-    } else {
-        return 1;
     }
+    const interval_coverage_regex = new RegExp('^interval_coverage_');
+    if (!interval_coverage_regex.test(col_name) && values !== null) {
+        return min_decimals_for_values(values);
+    }
+    return 1;
 }
+
+/**
+ * Return the minimum number of decimal places needed so that every non-zero
+ * value in `values` renders as non-zero (i.e., doesn't round to "0.000…0").
+ * Null, undefined, non-finite, and zero entries are ignored.
+ * Returns 1 when the array is empty or contains only zeros/non-finite values.
+ *
+ * @param {Array<number|null|undefined>} values
+ * @returns {number}
+ */
+function min_decimals_for_values(values) {
+    const nonZeroAbs = values
+        .filter(v => v !== null && v !== undefined && isFinite(v) && v !== 0)
+        .map(v => Math.abs(v));
+    if (nonZeroAbs.length === 0) return 1;
+    const minVal = Math.min(...nonZeroAbs);
+    // ceil(-log10(minVal)) = decimal places needed to show 1 significant figure for the smallest value.
+    // Subtract a tiny epsilon before ceil to guard against floating-point overshoot
+    // (e.g. -log10(0.001) can return 2.9999... instead of 3 exactly).
+    return Math.max(1, Math.ceil(-Math.log10(minVal) - 1e-10));
+}
+
 
 function parse_coverage_rate(score_name) {
     return parseFloat(score_name.slice(18));
@@ -88,4 +126,4 @@ function toArray(value) {
     return Array.isArray(value) ? value : [value];
 }
 
-export {titleCase, hexToRGB, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, convertDataColumnTypes, toArray}
+export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, convertDataColumnTypes, toArray}

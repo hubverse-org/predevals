@@ -648,14 +648,13 @@ const App = {
                 // default formatting for non-score columns
                 return {data: columnName, name: columnName};
             } else {
-                // format score columns by rounding to 2 decimal places for relative_skill columns and 1 or all other
-                // score columns. Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
+                // format score columns: relative_skill → 2 dp, interval_coverage → 1 dp,
+                // all others → auto-detected minimum decimals needed (see get_round_decimals).
+                // Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
                 // columns other than model_id and n are scores
-
-                // TODO: consider whether to make these formatting behaviors configurable
-                // TODO: consider refactor to helper function for score formatting
-
-                return {data: columnName, name: columnName, render: (d) => d.toFixed(get_round_decimals(columnName))};
+                const colValues = thisState.scores_table.map(row => row[columnName]);
+                const decimals = get_round_decimals(columnName, colValues);
+                return {data: columnName, name: columnName, render: (d) => d.toFixed(decimals)};
             }
         });
         const targetObj = this.getSelectedTargetObj();
@@ -817,6 +816,8 @@ const App = {
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
 
         // add a line for scores for each model
+        const metricValues = thisState.scores_plot.map(d => d[thisState.selected_metric]);
+        const metricDecimals = get_round_decimals(thisState.selected_metric, metricValues);
         for (const [model_id, model_scores] of grouped) {
             // get x and y pairs, not sorted
             let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
@@ -840,7 +841,7 @@ const App = {
                 type: 'scatter',
                 name: model_id,
                 hovermode: false,
-                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${get_round_decimals(this.state.selected_metric)}f}<extra></extra>`,
+                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${metricDecimals}f}<extra></extra>`,
                 opacity: 0.7,
             };
             pd.push(line_data);
@@ -863,6 +864,9 @@ const App = {
             return pd;
         }
 
+        const metricValues = thisState.scores_plot.map(d => d[thisState.selected_metric]);
+        const metricDecimals = get_round_decimals(thisState.selected_metric, metricValues);
+
         // custom color scales
         // TODO: refactor to a function for color scale
         // interval coverage: divergent scale with midpoint at the nominal coverage rate
@@ -877,7 +881,7 @@ const App = {
         if (is_coverage_metric) {
             // interval coverage
             eps = 0.0;
-            colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
+            colorbar_tick_format = `.${metricDecimals}f`;
 
             d3_colorscale = d3.scaleSequential(d3.interpolateRdBu);
             const colorscale_range = [0, 1]; // red low, blue high
@@ -915,7 +919,7 @@ const App = {
             eps = nonzero_min / 2.0;
 
             // tick labels are rounded the number of decimal places for the selected metric
-            colorbar_tick_format = `.${get_round_decimals(this.state.selected_metric)}f`;
+            colorbar_tick_format = `.${metricDecimals}f`;
 
             // color scale type and direction depends on metric type
             let colorscale_range;
@@ -1006,7 +1010,7 @@ const App = {
             z: z,
             customdata: z_orig,
             type: 'heatmap',
-            hovertemplate: `${thisState.selected_disaggregate_by}: %{x}<br>model: %{y}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata:.${get_round_decimals(this.state.selected_metric)}f}<extra></extra>`,
+            hovertemplate: `${thisState.selected_disaggregate_by}: %{x}<br>model: %{y}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata:.${metricDecimals}f}<extra></extra>`,
             hoverongaps: false
         };
 

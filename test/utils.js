@@ -3,6 +3,7 @@ import {
     convertDataColumnTypes,
     get_round_decimals,
     hexToRGB,
+    min_decimals_for_values,
     parse_coverage_rate,
     split_transformed_col_name,
     titleCase,
@@ -38,7 +39,7 @@ test('hexToRGB() handles 6-char hex', assert => {
 
 QUnit.module('get_round_decimals');
 
-test('returns 1 for plain metric columns', assert => {
+test('returns 1 for plain metric columns (no values)', assert => {
     assert.equal(get_round_decimals('wis'), 1);
     assert.equal(get_round_decimals('mae'), 1);
     assert.equal(get_round_decimals('wis__log'), 1);
@@ -49,6 +50,68 @@ test('returns 2 for scaled_relative_skill columns', assert => {
     assert.equal(get_round_decimals('wis_scaled_relative_skill'), 2);
     assert.equal(get_round_decimals('mae_scaled_relative_skill'), 2);
     assert.equal(get_round_decimals('mae_scaled_relative_skill__log'), 2);
+});
+
+test('with values: returns min decimals needed for non-coverage, non-skill columns', assert => {
+    assert.equal(get_round_decimals('wis', [0.000925, 0.000759, 0.000805]), 4);
+    assert.equal(get_round_decimals('ae_median', [0.001, 0.002, 0.009]), 3);
+    assert.equal(get_round_decimals('wis', [1.5, 2.3, 47.7]), 1);
+});
+
+test('with values: still returns 2 for scaled_relative_skill regardless of values', assert => {
+    assert.equal(get_round_decimals('wis_scaled_relative_skill', [0.000925, 0.000759]), 2);
+    assert.equal(get_round_decimals('mae_scaled_relative_skill', [100, 200]), 2);
+});
+
+test('with values: still returns 1 for interval_coverage columns (values are 0-100)', assert => {
+    assert.equal(get_round_decimals('interval_coverage_50', [47.7, 93.3]), 1);
+    assert.equal(get_round_decimals('interval_coverage_95', [0.001, 0.0005]), 1);
+});
+
+
+QUnit.module('min_decimals_for_values');
+
+test('returns 1 for empty, all-zero, or all-non-finite values', assert => {
+    assert.equal(min_decimals_for_values([]), 1);
+    assert.equal(min_decimals_for_values([0, 0, 0]), 1);
+    assert.equal(min_decimals_for_values([null, undefined]), 1);
+    assert.equal(min_decimals_for_values([Infinity, -Infinity]), 1);
+});
+
+test('returns 1 for values >= 0.1', assert => {
+    assert.equal(min_decimals_for_values([1.5, 2.3, 47.7]), 1);
+    assert.equal(min_decimals_for_values([0.1, 0.5, 0.9]), 1);
+});
+
+test('returns 2 for values in [0.01, 0.1)', assert => {
+    assert.equal(min_decimals_for_values([0.05, 0.08]), 2);
+    assert.equal(min_decimals_for_values([0.01, 0.09]), 2);
+});
+
+test('returns 3 for values in [0.001, 0.01)', assert => {
+    assert.equal(min_decimals_for_values([0.005, 0.008]), 3);
+    assert.equal(min_decimals_for_values([0.001, 0.009]), 3);
+});
+
+test('returns 4 for covidhub-style WIS values (~0.0005-0.0014)', assert => {
+    // real data: document.predevals.state.scores_table wis column
+    const wisValues = [0.000925048661683814, 0.00075907107176393, 0.000804968609706757,
+        0.00138310730984419, 0.00143697666395866, 0.00055223613252158, 0.000892415568463205];
+    assert.equal(min_decimals_for_values(wisValues), 4);
+});
+
+test('is driven by the smallest non-zero absolute value in the array', assert => {
+    assert.equal(min_decimals_for_values([100, 1.5, 0.001]), 3);
+});
+
+test('handles negative values by taking absolute value', assert => {
+    assert.equal(min_decimals_for_values([-0.005, -0.008]), 3);
+    assert.equal(min_decimals_for_values([-1.5, 0.5]), 1);
+});
+
+test('filters out null, undefined, and non-finite values', assert => {
+    assert.equal(min_decimals_for_values([null, undefined, Infinity, -Infinity, 0, 0.5]), 1);
+    assert.equal(min_decimals_for_values([null, 0.005]), 3);
 });
 
 
