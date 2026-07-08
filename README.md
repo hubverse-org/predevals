@@ -59,6 +59,8 @@ We follow a `-dev` prerelease convention for the `version` field in `package.jso
 
 We use [webpack](https://webpack.js.org/) to package up all dependencies into a single `dist/predevals.bundle.js` file for end users. To do so, execute the `package.json` `build` script via the following command, which will update all files in `dist/`.
 
+> Note on dependencies: `d3` is bundled into `dist/predevals.bundle.js` at build time (which is why it, like `webpack`, lives in `devDependencies` — end users load the prebuilt bundle rather than installing this package from npm). jQuery and Plotly are the exceptions: they are *not* bundled, and are instead expected as runtime globals supplied by the host dashboard page.
+
 ```bash
 npm run build
 ```
