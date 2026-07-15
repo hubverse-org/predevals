@@ -2,7 +2,7 @@
  * predeval: A JavaScript (ES6 ECMAScript) module for viewing forecast evaluations.
  */
 
-import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+import * as d3 from "d3";
 import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase, toArray} from "./utils.js";
 import {metricDefinitions} from "./metric-definitions.js";
 
@@ -289,10 +289,15 @@ const App = {
         const $targetSelect = $("#predeval_target");
         const thisState = this.state;
         thisState.targets.forEach(function (target) {
-            const target_id = target.target_id;
-            const selected = target_id === thisState.selected_target ? 'selected' : '';
-            const optionNode = `<option value="${target_id}" ${selected} >${target_id}</option>`;
-            $targetSelect.append(optionNode);
+            // Build with .attr()/.text() (not template-literal interpolation) so hub-author-supplied
+            // target_id/target_name can't break markup or inject HTML — the same reason
+            // updateTransformPanel() uses .text(). Use `||` (not `??`) so an empty target_name
+            // falls back to the target_id.
+            const $option = $('<option></option>')
+                .attr('value', target.target_id)
+                .prop('selected', target.target_id === thisState.selected_target)
+                .text(target.target_name || target.target_id);
+            $targetSelect.append($option);
         });
     },
     initializeEvalSetUI() {
@@ -301,9 +306,12 @@ const App = {
         const thisState = this.state;
         this.state.eval_sets.forEach(function (eval_set) {
             const eval_set_name = eval_set.eval_set_name;
-            const selected = eval_set_name === thisState.selected_eval_set ? 'selected' : '';
-            const optionNode = `<option value="${eval_set_name}" ${selected} >${eval_set_name}</option>`;
-            $setSelect.append(optionNode);
+            // .attr()/.text() so hub-author-supplied names can't break markup (see initializeTargetUI)
+            const $option = $('<option></option>')
+                .attr('value', eval_set_name)
+                .prop('selected', eval_set_name === thisState.selected_eval_set)
+                .text(eval_set_name);
+            $setSelect.append($option);
         });
     },
     initializePlotTypeUI() {
@@ -312,9 +320,11 @@ const App = {
         const thisState = this.state;
         const plot_types = ['Line plot', 'Heatmap'];
         plot_types.forEach(function (type) {
-            const selected = type === thisState.selected_plot_type ? 'selected' : '';
-            const optionNode = `<option value="${type}" ${selected} >${type}</option>`;
-            $plotTypeSelect.append(optionNode);
+            const $option = $('<option></option>')
+                .attr('value', type)
+                .prop('selected', type === thisState.selected_plot_type)
+                .text(type);
+            $plotTypeSelect.append($option);
         });
     },
     initializeDisaggregateByUI() {
@@ -331,9 +341,12 @@ const App = {
         }
 
         selected_target_obj.disaggregate_by.forEach(function (by) {
-            const selected = by === thisState.selected_disaggregate_by ? 'selected' : '';
-            const optionNode = `<option value="${by}" ${selected} >${by}</option>`;
-            $disaggregateBySelect.append(optionNode);
+            // .attr()/.text() so hub-author-supplied names can't break markup (see initializeTargetUI)
+            const $option = $('<option></option>')
+                .attr('value', by)
+                .prop('selected', by === thisState.selected_disaggregate_by)
+                .text(by);
+            $disaggregateBySelect.append($option);
         });
     },
     initializeMetricUI() {
@@ -351,9 +364,11 @@ const App = {
         }
 
         selected_target_obj.metrics.forEach(function (metric) {
-            const selected = metric === thisState.selected_metric ? 'selected' : '';
-            const optionNode = `<option value="${metric}" ${selected} >${score_col_name_to_text(metric)}</option>`;
-            $metricSelect.append(optionNode);
+            const $option = $('<option></option>')
+                .attr('value', metric)
+                .prop('selected', metric === thisState.selected_metric)
+                .text(score_col_name_to_text(metric));
+            $metricSelect.append($option);
         });
     },
     updateGlossary() {
