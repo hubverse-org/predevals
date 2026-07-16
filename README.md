@@ -102,3 +102,11 @@ Once the team agrees `main` is ready to release, follow this checklist. It mirro
 ### Packaging the component
 
 We use [webpack](https://webpack.js.org/) to package up all dependencies into a single `dist/predevals.bundle.js` file for end users. The `build` script (run in step 4 above) regenerates all files in `dist/`. End users always load the tagged bundle via jsDelivr, so the committed `dist/` bundle must be rebuilt and included as part of the release.
+
+> Note on dependencies: `d3` is bundled into `dist/predevals.bundle.js` at build time (which is why it, like `webpack`, lives in `devDependencies` — end users load the prebuilt bundle rather than installing this package from npm). jQuery and Plotly are the exceptions: they are *not* bundled, and are instead expected as runtime globals supplied by the host dashboard page. The bundled `d3` is internal to the component and is not exposed to the host page — so if your host page uses `d3` itself (e.g. a `d3.csv` data-loading callback, as `dev-example` does), it must load its own copy.
+
+```bash
+npm run build
+```
+
+You'll then need to commit and push your updates (including `dist/predevals.bundle.js`) to GitHub.
