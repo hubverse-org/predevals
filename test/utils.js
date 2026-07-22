@@ -3,8 +3,10 @@ import {
     convertDataColumnTypes,
     get_round_decimals,
     hexToRGB,
+    is_n_col,
     min_decimals_for_values,
     parse_coverage_rate,
+    score_col_name_to_text,
     split_transformed_col_name,
     titleCase,
     toArray,
@@ -157,6 +159,44 @@ test('returns the part before __ for transformed column names', assert => {
 });
 
 
+QUnit.module('is_n_col');
+
+test('matches the plain `n` column and per-output-type `n_<output_type>` columns', assert => {
+    assert.true(is_n_col('n'));
+    assert.true(is_n_col('n_quantile'));
+    assert.true(is_n_col('n_mean'));
+    assert.true(is_n_col('n_pmf'));
+});
+
+test('does not match metric, model_id, or disaggregate columns', assert => {
+    assert.false(is_n_col('wis'));
+    assert.false(is_n_col('ae_median'));
+    assert.false(is_n_col('interval_coverage_50'));
+    assert.false(is_n_col('model_id'));
+    assert.false(is_n_col('nowcast'));  // starts with `n` but is neither `n` nor `n_...`
+});
+
+
+QUnit.module('score_col_name_to_text');
+
+test('renders scored-count columns (n / n_<output_type>) as N', assert => {
+    assert.equal(score_col_name_to_text('n'), 'N');
+    assert.equal(score_col_name_to_text('n_quantile'), 'N');
+    assert.equal(score_col_name_to_text('n_mean'), 'N');
+});
+
+test('renders metrics, relative skill, and coverage columns', assert => {
+    assert.equal(score_col_name_to_text('model_id'), 'Model');
+    assert.equal(score_col_name_to_text('wis'), 'WIS');
+    assert.equal(score_col_name_to_text('wis_scaled_relative_skill'), 'Rel. WIS');
+    assert.equal(score_col_name_to_text('interval_coverage_95'), '95% Cov.');
+});
+
+test('renders transformed-scale columns with the label in parentheses', assert => {
+    assert.equal(score_col_name_to_text('wis__log'), 'WIS (log)');
+});
+
+
 QUnit.module('convertDataColumnTypes');
 
 test('converts score columns to float, n to int, interval_coverage to percent', assert => {
@@ -173,6 +213,23 @@ test('converts score columns to float, n to int, interval_coverage to percent', 
     assert.strictEqual(data[1].n, 20);
     assert.strictEqual(data[0].interval_coverage_50, 60);
     assert.strictEqual(data[1].interval_coverage_50, 80);
+});
+
+test('converts per-output-type n columns (n_<output_type>) to int', assert => {
+    const data = [
+        {model_id: 'm1', location: 'US', wis: '3.5', n_quantile: '10', ae_point: '2.1', n_mean: '20'},
+        {model_id: 'm2', location: 'US', wis: '1.2', n_quantile: '30', ae_point: '0.9', n_mean: '40'},
+    ];
+    data.columns = ['model_id', 'location', 'wis', 'n_quantile', 'ae_point', 'n_mean'];
+    convertDataColumnTypes('location', data);
+
+    assert.strictEqual(data[0].n_quantile, 10);
+    assert.strictEqual(data[1].n_quantile, 30);
+    assert.strictEqual(data[0].n_mean, 20);
+    assert.strictEqual(data[1].n_mean, 40);
+    // score columns alongside them still convert to float
+    assert.strictEqual(data[0].wis, 3.5);
+    assert.strictEqual(data[0].ae_point, 2.1);
 });
 
 test('converts scaled_relative_skill and transformed columns to float', assert => {

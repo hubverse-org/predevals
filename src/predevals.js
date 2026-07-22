@@ -3,8 +3,8 @@
  */
 
 import * as d3 from "d3";
-import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, parse_coverage_rate, split_transformed_col_name, titleCase, toArray} from "./utils.js";
-import {metricDefinitions} from "./metric-definitions.js";
+import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
+import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
 /**
@@ -115,39 +115,6 @@ function _createUIElements($componentDiv) {
     const $layoutDiv = $('<div class="g-col-12" style="display: flex; align-items: flex-start;"></div>');
     $layoutDiv.append($optionsDiv, $sidebarToggle, $evalDiv);
     $componentDiv.empty().append($layoutDiv);
-}
-
-
-const score_col_name_to_text_map = new Map(
-    [
-        ['model_id', 'Model'],
-        ['wis', 'WIS'],
-        ['wis_scaled_relative_skill', 'Rel. WIS'],
-        ['ae_median', 'MAE'],
-        ['ae_median_scaled_relative_skill', 'Rel. MAE'],
-        ['ae_point', 'MAE'],
-        ['ae_point_scaled_relative_skill', 'Rel. MAE'],
-        ['se_point', 'MSE'],
-        ['se_point_scaled_relative_skill', 'Rel. MSE']
-    ]
-)
-
-/**
- * Converts a score column name to a human-readable string.
- * TODO: move to utils.js
- * @param {String} score_col_name - the name of a column in a scores data object
- */
-function score_col_name_to_text(score_name) {
-    const interval_coverage_regex = new RegExp('^interval_coverage_');
-    if (interval_coverage_regex.test(score_name)) {
-        // interval_coverage_* are transform-invariant per the
-        // predevals-options.json contract, so no `__<label>` variant exists.
-        return `${parse_coverage_rate(score_name)}\% Cov.`;
-    }
-    const split = split_transformed_col_name(score_name);
-    const base = split ? split.base : score_name;
-    const baseText = score_col_name_to_text_map.get(base) || titleCase(base);
-    return split ? `${baseText} (${split.label})` : baseText;
 }
 
 
@@ -374,6 +341,7 @@ const App = {
     updateGlossary() {
         // collect metric names (internal) for the current context based on whether the plot tab is active or not
         let metricNames;
+        let nCols = [];
         if ($('#predeval_plot_tab').hasClass('active')) {
             metricNames = [this.state.selected_metric];
         } else {
@@ -381,6 +349,9 @@ const App = {
             const allMetrics = (targetObj.metrics || []).concat(targetObj.relative_metrics || []);
             // deduplicate while preserving order
             metricNames = [...new Set(allMetrics)];
+            // `n` column(s) come from the scores data, not the target options. Only the
+            // table shows them, so the N entry is added in table context only.
+            nCols = (this.state.scores_table.columns || []).filter(is_n_col);
         }
 
         // Strip any `__<label>` transformed-scale suffix and dedupe to base
@@ -389,15 +360,28 @@ const App = {
         // per target.
         const baseNames = [...new Set(metricNames.map(base_col_name))];
 
+        // build the definition rows: one per base metric, plus a trailing N row
+        // when `n` column(s) are present in the table
+        const entries = baseNames.map(function (metric) {
+            const [definition, detailsLink] = metricDefinitions[metric] || ['No definition available.', null];
+            const detailsHtml = detailsLink ? ` <a href="${detailsLink}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
+            return {term: score_col_name_to_text(metric), bodyHtml: `${definition}${detailsHtml}`};
+        });
+        if (nCols.length > 0) {
+            // when more than one `n` column is shown, add the clarifying sentence
+            // tying each N to the metrics on its left
+            const nText = nCols.length > 1
+                ? `${nDefinition.single} ${nDefinition.multi}`
+                : nDefinition.single;
+            entries.push({term: 'N', bodyHtml: nText});
+        }
+
         // rebuild the definition list
         const $dl = $('#predeval_glossary_list');
         $dl.empty();
-        baseNames.forEach(function (metric, idx) {
-            const humanName = score_col_name_to_text(metric);
-            const [definition, detailsLink] = metricDefinitions[metric] || ['No definition available.', null];
-            const detailsHtml = detailsLink ? ` <a href="${detailsLink}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>` : '';
-            $dl.append(`<dt class="fw-semibold${idx > 0 ? ' mt-2' : ''}">${humanName}</dt>`);
-            $dl.append(`<dd class="ms-3 mb-0" style="font-size: 0.875rem;">${definition}${detailsHtml}</dd>`);
+        entries.forEach(function (entry, idx) {
+            $dl.append(`<dt class="fw-semibold${idx > 0 ? ' mt-2' : ''}">${entry.term}</dt>`);
+            $dl.append(`<dd class="ms-3 mb-0" style="font-size: 0.875rem;">${entry.bodyHtml}</dd>`);
         });
     },
     /**
@@ -474,10 +458,10 @@ const App = {
         // user changes selection for metric dropdown
         $('#predeval_metric').on('change', function () {
             App.state.selected_metric = this.value;
-            App.updateGlossary();
 
             const isFetchFirst = false; // no need to fetch data, just update display based on a new column
             const isFetchBoth = false;  // no need to fetch both table and plot data
+            // updateDisplay() (called synchronously here since isFetchFirst is false) rebuilds the glossary
             App.fetchDataUpdateDisplay(isFetchFirst, isFetchBoth);
         });
 
@@ -604,7 +588,7 @@ const App = {
             this.state.selected_eval_set,  // ex: 'Full season', 'Last 4 weeks'
             disaggregate_by)  // ex: null, 'horizon', 'location', ...
             .then((data) => {
-                // do an in-place conversion of score and 'n' columns' data types
+                // do an in-place conversion of score and `n` column(s) data types
                 convertDataColumnTypes(this.state.selected_disaggregate_by, data);
 
                 // update state
@@ -622,6 +606,9 @@ const App = {
         console.log('updateDisplay(): entered');
         this.updateTable();
         this.updatePlot();
+        // rebuild the glossary now that scores_table is loaded: the N entry is derived
+        // from the fetched data, so the pre-fetch calls in the event handlers can't populate it.
+        this.updateGlossary();
     },
 
     // update display with table
@@ -659,14 +646,14 @@ const App = {
 
         // initialize datatable
         const dtColumns = scoreTableCols.map(columnName => {
-            if ((columnName === 'model_id') || (columnName === 'n')) {
-                // default formatting for non-score columns
+            if ((columnName === 'model_id') || is_n_col(columnName)) {
+                // default formatting for non-score columns (model_id and `n` columns)
                 return {data: columnName, name: columnName};
             } else {
                 // format score columns: relative_skill → 2 dp, interval_coverage → 1 dp,
                 // all others → auto-detected minimum decimals needed (see get_round_decimals).
                 // Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
-                // columns other than model_id and n are scores
+                // columns other than model_id and the `n` column(s) are scores
                 const colValues = thisState.scores_table.map(row => row[columnName]);
                 const decimals = get_round_decimals(columnName, colValues);
                 return {data: columnName, name: columnName, render: (d) => d.toFixed(decimals)};
