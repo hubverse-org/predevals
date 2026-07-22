@@ -25,3 +25,13 @@ export const metricDefinitions = {
     'wis_scaled_relative_skill': ['Relative skill of the weighted interval score, scaled in comparison to the baseline model. Compares Model M\'s average WIS to all other models\', for all possible forecasts, then divides that by the same score for the baseline for easy comparison. Smaller values are better, and the baseline always has a value of 1.0.',
         'https://epiforecasts.io/scoringutils/reference/get_pairwise_comparisons.html'],
 };
+
+/**
+ * Glossary definition for the `n` (scored-count) column(s), rendered under the
+ * header `N`. `multi` is appended after `single` when more than one `n_<output_type>`
+ * column is present, so each `N` can be tied to the metrics it sits beside.
+ */
+export const nDefinition = {
+    single: 'Number of predictions scored for the associated metric(s).',
+    multi: 'Each N count refers to the metric column(s) to its left.',
+};
