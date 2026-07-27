@@ -713,7 +713,7 @@ const App = {
 
         // set the x-axis tickvals; stored in App state, determines the order of:
         // - data items created by getPlotlyData()
-        // - x-axis labels created by getPlotlyLayout()
+        // - x-axis categories set by getPlotlyLayout()
         this.setXaxisTickvals();
 
         // get data and layout
@@ -776,8 +776,11 @@ const App = {
             },
             xaxis: {
                 title: {text: this.state.disaggregate_by},
-                tickvals: this.state.xaxis_tickvals,
-                ticktext: this.state.xaxis_tickvals,
+                // no tickvals/ticktext: setting them forces Plotly to draw one label per unique
+                // value, which is unreadable for axes with many values (e.g. hundreds of dates).
+                // Ordering comes from categoryorder/categoryarray, and trace x values already
+                // hold the human-readable text, so letting Plotly pick ticks loses nothing and
+                // lets it thin them to fit and re-pick them on zoom/resize.
                 categoryorder: 'array',
                 categoryarray: this.state.xaxis_tickvals,
                 fixedrange: false,
