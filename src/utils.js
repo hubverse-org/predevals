@@ -87,7 +87,55 @@ function base_col_name(col_name) {
 }
 
 /**
- * Does an in-place conversion of `data`'s score and 'n' columns' data types: Scores convert to floats, and 'n' to ints.
+ * Is `col_name` an `n` (scored-count) column? hubPredEvalsData emits a single
+ * `n` column in the common case, or per-output-type `n_<output_type>` columns
+ * (e.g. `n_quantile`) when the count diverges across output types for a target.
+ *
+ * @param col_name {String}
+ * @returns {Boolean}
+ */
+function is_n_col(col_name) {
+    return col_name === 'n' || col_name.startsWith('n_');
+}
+
+const score_col_name_to_text_map = new Map(
+    [
+        ['model_id', 'Model'],
+        ['wis', 'WIS'],
+        ['wis_scaled_relative_skill', 'Rel. WIS'],
+        ['ae_median', 'MAE'],
+        ['ae_median_scaled_relative_skill', 'Rel. MAE'],
+        ['ae_point', 'MAE'],
+        ['ae_point_scaled_relative_skill', 'Rel. MAE'],
+        ['se_point', 'MSE'],
+        ['se_point_scaled_relative_skill', 'Rel. MSE']
+    ]
+)
+
+/**
+ * Converts a score column name to a human-readable string.
+ * @param {String} score_name - the name of a column in a scores data object
+ */
+function score_col_name_to_text(score_name) {
+    if (is_n_col(score_name)) {
+        // `n` columns (`n` / `n_<output_type>`) all render as `N`.
+        return 'N';
+    }
+    const interval_coverage_regex = new RegExp('^interval_coverage_');
+    if (interval_coverage_regex.test(score_name)) {
+        // interval_coverage_* are transform-invariant per the
+        // predevals-options.json contract, so no `__<label>` variant exists.
+        return `${parse_coverage_rate(score_name)}\% Cov.`;
+    }
+    const split = split_transformed_col_name(score_name);
+    const base = split ? split.base : score_name;
+    const baseText = score_col_name_to_text_map.get(base) || titleCase(base);
+    return split ? `${baseText} (${split.label})` : baseText;
+}
+
+/**
+ * Does an in-place conversion of `data`'s score and `n` columns' data types: Scores convert to floats, and `n`
+ * columns (`n` / `n_<output_type>`) to ints.
  *
  * @param disaggregateBy {String} - an `App.state.selected_disaggregate_by` value
  * @param data {Array} - as returned by _fetchData() - a d3.csv() object
@@ -95,8 +143,17 @@ function base_col_name(col_name) {
 function convertDataColumnTypes(disaggregateBy, data) {
     const interval_coverage_regex = new RegExp('^interval_coverage_');
     for (const col_name of data.columns) {
-        if (!['model_id', 'n', disaggregateBy].includes(col_name)) {
-            // This is a score column, so convert values in all rows to float
+        if (col_name === 'model_id' || col_name === disaggregateBy) {
+            // leave model_id and the disaggregate-by column unchanged
+            continue;
+        }
+        if (is_n_col(col_name)) {
+            // `n` column, so convert values in all rows to int
+            for (let i = 0; i < data.length; i++) {
+                data[i][col_name] = parseInt(data[i][col_name]);
+            }
+        } else {
+            // score column, so convert values in all rows to float
             for (let i = 0; i < data.length; i++) {
                 data[i][col_name] = parseFloat(data[i][col_name]);
 
@@ -104,11 +161,6 @@ function convertDataColumnTypes(disaggregateBy, data) {
                 if (interval_coverage_regex.test(col_name)) {
                     data[i][col_name] *= 100;
                 }
-            }
-        } else if (col_name === 'n') {
-            // This is the 'n' column, so convert values in all rows to int
-            for (let i = 0; i < data.length; i++) {
-                data[i][col_name] = parseInt(data[i][col_name]);
             }
         }
     }
@@ -126,4 +178,4 @@ function toArray(value) {
     return Array.isArray(value) ? value : [value];
 }
 
-export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, convertDataColumnTypes, toArray}
+export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, score_col_name_to_text, convertDataColumnTypes, toArray}
