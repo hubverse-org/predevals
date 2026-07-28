@@ -55,9 +55,10 @@ function useStubbedApp(hooks) {
         App.fetchDataUpdateDisplay = function () {
         };
         App.initialize('qunit-fixture', _fetchData, structuredClone(TEST_OPTIONS));
-        // initialize() doesn't reset scores_table, so clear it (it leaks across tests via the App
-        // singleton) to keep tests order-independent — a fresh load has no scores fetched yet.
+        // initialize() doesn't reset the fetched scores, so clear them (they leak across tests via
+        // the App singleton) to keep tests order-independent — a fresh load has fetched nothing.
         App.state.scores_table = [];
+        App.state.scores_plot = [];
     });
     hooks.afterEach(() => {
         App.fetchDataUpdateDisplay = originalFetchDataUpdateDisplay;
@@ -257,5 +258,107 @@ QUnit.module('scores table headers', (hooks) => {
         App.updateTable();
 
         assert.deepEqual(headerTexts(), ['Model', 'WIS', 'MAE', 'N']);
+    });
+});
+
+
+//
+// plot x-axis tests
+//
+
+QUnit.module('plot x-axis', (hooks) => {
+    useStubbedApp(hooks);
+
+    // Populate scores_plot with one row per (model, x value), as the CSV fetch would. Values are
+    // strings there, which is what makes the sort and axis-type handling matter.
+    function setPlotScores(disaggregateBy, xValues) {
+        App.state.selected_plot_type = 'Line plot';
+        App.state.selected_metric = 'wis';
+        App.state.selected_disaggregate_by = disaggregateBy;
+        App.state.scores_plot = xValues.map((x) => ({
+            model_id: 'model-a',
+            [disaggregateBy]: String(x),
+        }));
+    }
+
+    test('setXaxisValues() orders numeric task id values numerically, not lexicographically', assert => {
+        // variant-nowcast-hub's horizons: a plain .sort() gives -1, -10, -11, ..., 0, 1, 10, 2
+        setPlotScores('horizon', [0, 1, 2, 10, 11, -31, -4, -1]);
+        App.setXaxisValues();
+
+        assert.deepEqual(App.state.xaxis_values,
+            ['-31', '-4', '-1', '0', '1', '2', '10', '11']);
+    });
+
+    test('setXaxisValues() keeps the lexicographic sort for non-numeric values', assert => {
+        setPlotScores('variant', ['XBB', 'BA.2', 'JN.1']);
+        App.setXaxisValues();
+
+        assert.deepEqual(App.state.xaxis_values, ['BA.2', 'JN.1', 'XBB']);
+    });
+
+    test('setXaxisValues() orders labelled numeric task ids by value, not by label text', assert => {
+        // the human-readable text is what Plotly plots, but sorting it would put '10 weeks ahead'
+        // second, reintroducing the lexicographic order this change exists to fix
+        App.state.task_id_text = {
+            horizon: {'1': '1 week ahead', '2': '2 weeks ahead', '10': '10 weeks ahead'},
+        };
+        setPlotScores('horizon', [10, 1, 2]);
+        App.setXaxisValues();
+
+        assert.deepEqual(App.state.xaxis_values,
+            ['1 week ahead', '2 weeks ahead', '10 weeks ahead']);
+        assert.equal(App.getPlotlyLayout().xaxis.type, 'category',
+            'the labels are what Plotly sees, so the axis is categorical');
+    });
+
+    test('setXaxisValues() sorts dates chronologically and de-duplicates', assert => {
+        setPlotScores('reference_date', ['2025-01-20', '2025-01-06', '2025-01-13', '2025-01-06']);
+        App.setXaxisValues();
+
+        assert.deepEqual(App.state.xaxis_values,
+            ['2025-01-06', '2025-01-13', '2025-01-20']);
+    });
+
+    test('getPlotlyLayout() pins numeric and categorical axes to category', assert => {
+        // a linear axis auto-picks ticks between the values that exist, labelling horizons 0.5/1.5
+        setPlotScores('horizon', [0, 1, 2, 3]);
+        App.setXaxisValues();
+        const xaxis = App.getPlotlyLayout().xaxis;
+
+        assert.equal(xaxis.type, 'category', 'numeric task id values');
+        assert.equal(xaxis.categoryorder, 'array');
+        assert.deepEqual(xaxis.categoryarray, ['0', '1', '2', '3']);
+
+        setPlotScores('variant', ['XBB', 'BA.2', 'JN.1']);
+        App.setXaxisValues();
+
+        assert.equal(App.getPlotlyLayout().xaxis.type, 'category', 'non-numeric task id values');
+    });
+
+    test('getPlotlyLayout() gives date axes a date type, so Plotly formats them as dates', assert => {
+        setPlotScores('reference_date', ['2025-01-06', '2025-01-13', '2025-01-20']);
+        App.setXaxisValues();
+
+        assert.equal(App.getPlotlyLayout().xaxis.type, 'date');
+    });
+
+    test('getPlotlyLayout() sets no tickvals/ticktext, so Plotly thins labels to fit', assert => {
+        // pinning one label per value is what made dense date axes unreadable (#57)
+        const dates = Array.from({length: 60},
+            (_, i) => new Date(Date.UTC(2025, 0, 6 + 7 * i)).toISOString().slice(0, 10));
+        setPlotScores('reference_date', dates);
+        App.setXaxisValues();
+        const xaxis = App.getPlotlyLayout().xaxis;
+
+        assert.strictEqual(xaxis.tickvals, undefined);
+        assert.strictEqual(xaxis.ticktext, undefined);
+    });
+
+    test('getPlotlyLayout() titles the x axis with the selected disaggregate_by', assert => {
+        setPlotScores('horizon', [0, 1, 2]);
+        App.setXaxisValues();
+
+        assert.equal(App.getPlotlyLayout().xaxis.title.text, 'horizon');
     });
 });

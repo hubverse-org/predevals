@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -148,7 +148,8 @@ const App = {
         selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
         selected_eval_set: '',
-        xaxis_tickvals: [],
+        xaxis_values: [],
+        xaxis_kind: 'category',  // 'date', 'numeric', or 'category'; see `axis_kind()`
         // selected_plot_type: '',
 
         // 2/2 Data used to create tables or plots:
@@ -698,10 +699,10 @@ const App = {
     updatePlot() {
         const plotlyDiv = document.getElementById('predeval_plotly_div');
 
-        // set the x-axis tickvals; stored in App state, determines the order of:
+        // set the x-axis values; stored in App state, determines the order of:
         // - data items created by getPlotlyData()
         // - x-axis categories set by getPlotlyLayout()
-        this.setXaxisTickvals();
+        this.setXaxisValues();
 
         // get data and layout
         const data = this.getPlotlyData();
@@ -726,21 +727,31 @@ const App = {
         // update plot
         Plotly.react(plotlyDiv, data, layout);
     },
-    setXaxisTickvals() {
-        // set the xaxis_tickvals property of the App state
+    setXaxisValues() {
+        // set the xaxis_values and xaxis_kind properties of the App state
         // used in getPlotlyLayout() and getPlotlyData()
 
-        let all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
+        const all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
+
+        // get unique values and sort. Values arrive as strings, so the default sort compares them
+        // lexicographically: right for categories, and for ISO dates (which sort chronologically
+        // as text), but wrong for numeric task ids, where it gives -1, -10, -11, ..., 0, 1, 10, 2.
+        //
+        // sort the underlying values rather than their display text, so that a task ID with
+        // human-readable text still orders by what the values mean ('2 weeks ahead' before
+        // '10 weeks ahead') rather than by how the labels happen to spell.
+        const unsorted = [...new Set(all_xaxis_vals)];
+        const sorted = axis_kind(unsorted) === 'numeric'
+            ? unsorted.sort((a, b) => Number(a) - Number(b))
+            : unsorted.sort();
 
         // If x axis is a task ID for which human-readable text was provided, use that text
-        all_xaxis_vals = this.taskIdValuesToText(this.state.selected_disaggregate_by, all_xaxis_vals)
+        const xaxis_values = [...new Set(this.taskIdValuesToText(this.state.selected_disaggregate_by, sorted))];
 
-        // get unique values and sort
-        const xaxis_tickvals_unsorted = [...new Set(all_xaxis_vals)];
-        const xaxis_tickvals = xaxis_tickvals_unsorted.sort();
-
-        // update state
-        this.state.xaxis_tickvals = xaxis_tickvals;
+        // update state. The kind is re-derived from the display text because that is what reaches
+        // Plotly as the trace x values, and so what its axis type has to match.
+        this.state.xaxis_kind = axis_kind(xaxis_values);
+        this.state.xaxis_values = xaxis_values;
     },
     getPlotlyLayout() {
         if (this.state.scores_plot.length === 0) {
@@ -762,14 +773,18 @@ const App = {
                 yanchor: 'top',
             },
             xaxis: {
-                title: {text: this.state.disaggregate_by},
-                // no tickvals/ticktext: setting them forces Plotly to draw one label per unique
-                // value, which is unreadable for axes with many values (e.g. hundreds of dates).
-                // Ordering comes from categoryorder/categoryarray, and trace x values already
-                // hold the human-readable text, so letting Plotly pick ticks loses nothing and
-                // lets it thin them to fit and re-pick them on zoom/resize.
+                title: {text: this.state.selected_disaggregate_by},
+                // no tickvals/ticktext: pinning a label to every unique value is unreadable for
+                // axes with many values (e.g. hundreds of dates). Plotly thins auto ticks to fit
+                // and re-picks them on zoom/resize.
+                //
+                // numeric task ids map to 'category' rather than 'linear' because auto ticks on a
+                // linear axis land between the values that exist, labelling horizons 0.5, 1.5,
+                // 2.5. 'category' is also what makes categoryorder/categoryarray below take
+                // effect — Plotly ignores them on date and linear axes.
+                type: this.state.xaxis_kind === 'date' ? 'date' : 'category',
                 categoryorder: 'array',
-                categoryarray: this.state.xaxis_tickvals,
+                categoryarray: this.state.xaxis_values,
                 fixedrange: false,
                 automargin: true
             },
@@ -833,8 +848,8 @@ const App = {
             const y_unsrt = model_scores.map(d => d[thisState.selected_metric]);
             let x_y = x_unsrt.map((val, i) => [val, y_unsrt[i]]);
 
-            // sort (x, y) pairs in order of this.state.xaxis_tickvals
-            x_y.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
+            // sort (x, y) pairs in order of this.state.xaxis_values
+            x_y.sort((a, b) => thisState.xaxis_values.indexOf(a[0]) - thisState.xaxis_values.indexOf(b[0]));
             const x = x_y.map(d => d[0]);
             const y = x_y.map(d => d[1]);
 
@@ -973,7 +988,7 @@ const App = {
         // group score data by model
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
 
-        let x = thisState.xaxis_tickvals; // this.state.selected_disaggregate_by
+        let x = thisState.xaxis_values; // this.state.selected_disaggregate_by
         let y = Array.from(grouped.keys()); // model_id
         let z = []; // scores on transformed scale (log scale if applicable)
         let z_orig = []; // scores on original scale
@@ -990,16 +1005,16 @@ const App = {
             const z_orig_unsrt = model_scores.map(d => d[thisState.selected_metric]);
             let x_z = x_unsrt.map((val, i) => [val, z_unsrt[i], z_orig_unsrt[i]]);
 
-            // sort (x, z, z_orig) tuples in order of this.state.xaxis_tickvals
-            x_z.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
+            // sort (x, z, z_orig) tuples in order of this.state.xaxis_values
+            x_z.sort((a, b) => thisState.xaxis_values.indexOf(a[0]) - thisState.xaxis_values.indexOf(b[0]));
 
-            // get z values in the order of xaxis_tickvals,
+            // get z values in the order of xaxis_values,
             // including missing values represented as null
-            const model_z = thisState.xaxis_tickvals.map(x_val => {
+            const model_z = thisState.xaxis_values.map(x_val => {
                 const this_x_z_val = x_z.find(d => d[0] === x_val);
                 return this_x_z_val ? this_x_z_val[1] : null;
             });
-            const model_z_orig = thisState.xaxis_tickvals.map(x_val => {
+            const model_z_orig = thisState.xaxis_values.map(x_val => {
                 const this_x_z_val = x_z.find(d => d[0] === x_val);
                 return this_x_z_val ? this_x_z_val[2] : null;
             });
