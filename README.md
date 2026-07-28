@@ -14,20 +14,50 @@ You'll need to install Node.js and npm. Please see the installation instructions
 You must install the required Node.js packages via:
 
 ```bash
-npm install --save-dev
+npm ci
 ```
+
+`npm ci` installs the exact versions pinned in `package-lock.json` and fails if the lockfile has drifted from `package.json`. Prefer it over `npm install`: `npm install` is free to resolve *newer* versions than the lockfile pins, which silently leaves you building with a different toolchain than everyone else.
+
+> [!IMPORTANT]
+> Re-run `npm ci` whenever `package-lock.json` changes underneath you — after a `git pull`, a merge from `main`, a dependency bump, or a branch switch. A stale `node_modules` is the usual cause of committed bundles that don't reproduce (see [Rebuilding the bundles](#rebuilding-the-bundles)).
 
 ## Local development workflow
 
 The `dev-example` folder has a minimal working example for local development, based on the [flusight-dashboard](https://github.com/reichlab/flusight-dashboard). To use this example for development, use the following commands, starting from the root of the `predevals` repository:
 
 ```bash
-npm run build
-cp dist/predevals.bundle.js dev-example
+npm run build && cp dist/predevals.bundle.js dev-example/predevals.bundle.js
 python3 -m http.server 8000 -d dev-example/
 ```
 
-Then open http://127.0.0.1:8000/ in your web browser. As you make changes to `src/predevals.js`, rebuild and recopy the updated predevals.bundle.js into the `dev-example` folder and then refresh the page in your browser.
+Then open http://127.0.0.1:8000/ in your web browser. As you make changes to `src/predevals.js`, re-run the build-and-copy line above and then refresh the page in your browser.
+
+> [!IMPORTANT]
+> The build-and-copy line above is for iterating in the browser only — editing `src/` doesn't change any dependency, so there's nothing to reinstall between refreshes. When the bundle you've built is going into a **commit**, use the longer sequence in [Rebuilding the bundles](#rebuilding-the-bundles), which adds `npm ci` up front.
+
+## Rebuilding the bundles
+
+Two copies of the bundle are committed to this repository, and both must be regenerated together:
+
+- `dist/predevals.bundle.js` — what end users load from a tag via jsDelivr
+- `dev-example/predevals.bundle.js` — what the local dev server serves
+
+Whenever a change to `src/` is going into a commit, rebuild both from the pinned toolchain:
+
+```bash
+npm ci && npm run build && cp dist/predevals.bundle.js dev-example/predevals.bundle.js
+git status   # both bundles should be the only unexpected changes
+```
+
+The leading `npm ci` is the part that's easy to skip and matters most. Building against a `node_modules` that is newer or older than `package-lock.json` produces a bundle that nobody else can reproduce — webpack's output shape itself changes between versions (for example, whether the bundle carries a runtime wrapper or is fully module-concatenated), so the committed artifact stops matching what the branch plus the lockfile actually build, and every subsequent bundle diff is noise.
+
+To check that a bundle you're about to commit is reproducible, rebuild on a clean install and confirm the diff contains only your intended change:
+
+```bash
+npm ci && npm run build
+git diff --stat dist/
+```
 
 ## Running unit tests
 
@@ -75,17 +105,13 @@ Once the team agrees `main` is ready to release, follow this checklist. It mirro
 1. **Decide the version bump.** Based on everything that landed since the last tag, pick patch / minor / major per [SemVer](https://semver.org/). This becomes `X.Y.Z` (the `-dev` placeholder on `main` is just a starting guess — override it if what actually landed warrants a different bump).
 2. **Open a release branch** off `main`, named `<author>/release/vX.Y.Z` (e.g. `ak/release/v1.2.1`).
 3. **Set the release version.** In `package.json` and `package-lock.json`, drop `-dev` and set the final `X.Y.Z`.
-4. **Rebuild the bundle** so `dist/` reflects the latest source (see [Packaging the component](#packaging-the-component)):
+4. **Rebuild both bundles** from the pinned toolchain so they reflect the latest source, then commit both (see [Rebuilding the bundles](#rebuilding-the-bundles) and [Packaging the component](#packaging-the-component)):
 
    ```bash
-   npm run build
+   npm ci && npm run build && cp dist/predevals.bundle.js dev-example/predevals.bundle.js
    ```
 
-   Then sync the built bundle into the dev example and commit both:
-
-   ```bash
-   cp dist/predevals.bundle.js dev-example/predevals.bundle.js
-   ```
+   Do not skip `npm ci` here — a release bundle built against a stale `node_modules` is not the artifact the tagged lockfile produces, and it's the copy end users load.
 
 5. **Open a PR and get a review** from another member of the dev team. Merge into `main` once approved.
 6. **Cut the tag.** On the merge commit, create an annotated (`-a`) or signed (`-s`) tag named `vX.Y.Z` and push it:
@@ -106,7 +132,7 @@ We use [webpack](https://webpack.js.org/) to package up all dependencies into a 
 > Note on dependencies: `d3` is bundled into `dist/predevals.bundle.js` at build time (which is why it, like `webpack`, lives in `devDependencies` — end users load the prebuilt bundle rather than installing this package from npm). jQuery and Plotly are the exceptions: they are *not* bundled, and are instead expected as runtime globals supplied by the host dashboard page. The bundled `d3` is internal to the component and is not exposed to the host page — so if your host page uses `d3` itself (e.g. a `d3.csv` data-loading callback, as `dev-example` does), it must load its own copy.
 
 ```bash
-npm run build
+npm ci && npm run build && cp dist/predevals.bundle.js dev-example/predevals.bundle.js
 ```
 
-You'll then need to commit and push your updates (including `dist/predevals.bundle.js`) to GitHub.
+You'll then need to commit and push your updates (including both `dist/predevals.bundle.js` and `dev-example/predevals.bundle.js`) to GitHub.

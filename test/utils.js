@@ -2,6 +2,7 @@ import {
     base_col_name,
     convertDataColumnTypes,
     get_round_decimals,
+    axis_kind,
     hexToRGB,
     is_n_col,
     min_decimals_for_values,
@@ -287,4 +288,32 @@ test('wraps a scalar in an array', assert => {
 test('returns an array unchanged', assert => {
     assert.deepEqual(toArray(['foo', 'bar']), ['foo', 'bar']);
     assert.deepEqual(toArray([]), []);
+});
+
+
+QUnit.module('axis_kind');
+
+test('classifies ISO dates as date', assert => {
+    assert.equal(axis_kind(['2025-01-06', '2025-01-13', '2025-01-20']), 'date');
+});
+
+test('classifies numbers as numeric, including negatives, zero, and decimals', assert => {
+    assert.equal(axis_kind(['0', '1', '2', '3']), 'numeric');
+    assert.equal(axis_kind(['-31', '-1', '0', '10']), 'numeric');
+    assert.equal(axis_kind(['1.5', '2']), 'numeric');
+});
+
+test('falls back to category for anything else', assert => {
+    assert.equal(axis_kind(['US', 'CA']), 'category');
+    assert.equal(axis_kind(['1', '2', 'US']), 'category', 'mixed numeric and non-numeric');
+    assert.equal(axis_kind(['2025-01-06', 'US']), 'category', 'mixed date and non-date');
+    assert.equal(axis_kind(['1', '']), 'category', 'empty string is not a number');
+    assert.equal(axis_kind([]), 'category', 'no values');
+});
+
+test('requires the whole value to be a date, not just its start', assert => {
+    // Plotly renders a blank plot for a date axis whose values it cannot parse, so a labelled
+    // date such as a task_id_text entry has to fall through to category
+    assert.equal(axis_kind(['2025-01-06 (EW02)', '2025-01-13 (EW03)']), 'category');
+    assert.equal(axis_kind(['2025-01-06/2025-01-12', '2025-01-13/2025-01-19']), 'category');
 });
