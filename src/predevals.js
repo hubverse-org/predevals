@@ -148,7 +148,7 @@ const App = {
         selected_plot_type: 'Heatmap',
         selected_disaggregate_by: '',
         selected_eval_set: '',
-        xaxis_tickvals: [],
+        xaxis_values: [],
         xaxis_kind: 'category',  // 'date', 'numeric', or 'category'; see `axis_kind()`
         // selected_plot_type: '',
 
@@ -699,10 +699,10 @@ const App = {
     updatePlot() {
         const plotlyDiv = document.getElementById('predeval_plotly_div');
 
-        // set the x-axis tickvals; stored in App state, determines the order of:
+        // set the x-axis values; stored in App state, determines the order of:
         // - data items created by getPlotlyData()
         // - x-axis categories set by getPlotlyLayout()
-        this.setXaxisTickvals();
+        this.setXaxisValues();
 
         // get data and layout
         const data = this.getPlotlyData();
@@ -727,8 +727,8 @@ const App = {
         // update plot
         Plotly.react(plotlyDiv, data, layout);
     },
-    setXaxisTickvals() {
-        // set the xaxis_tickvals and xaxis_kind properties of the App state
+    setXaxisValues() {
+        // set the xaxis_values and xaxis_kind properties of the App state
         // used in getPlotlyLayout() and getPlotlyData()
 
         const all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
@@ -746,12 +746,12 @@ const App = {
             : unsorted.sort();
 
         // If x axis is a task ID for which human-readable text was provided, use that text
-        const xaxis_tickvals = [...new Set(this.taskIdValuesToText(this.state.selected_disaggregate_by, sorted))];
+        const xaxis_values = [...new Set(this.taskIdValuesToText(this.state.selected_disaggregate_by, sorted))];
 
         // update state. The kind is re-derived from the display text because that is what reaches
         // Plotly as the trace x values, and so what its axis type has to match.
-        this.state.xaxis_kind = axis_kind(xaxis_tickvals);
-        this.state.xaxis_tickvals = xaxis_tickvals;
+        this.state.xaxis_kind = axis_kind(xaxis_values);
+        this.state.xaxis_values = xaxis_values;
     },
     getPlotlyLayout() {
         if (this.state.scores_plot.length === 0) {
@@ -784,7 +784,7 @@ const App = {
                 // effect — Plotly ignores them on date and linear axes.
                 type: this.state.xaxis_kind === 'date' ? 'date' : 'category',
                 categoryorder: 'array',
-                categoryarray: this.state.xaxis_tickvals,
+                categoryarray: this.state.xaxis_values,
                 fixedrange: false,
                 automargin: true
             },
@@ -848,8 +848,8 @@ const App = {
             const y_unsrt = model_scores.map(d => d[thisState.selected_metric]);
             let x_y = x_unsrt.map((val, i) => [val, y_unsrt[i]]);
 
-            // sort (x, y) pairs in order of this.state.xaxis_tickvals
-            x_y.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
+            // sort (x, y) pairs in order of this.state.xaxis_values
+            x_y.sort((a, b) => thisState.xaxis_values.indexOf(a[0]) - thisState.xaxis_values.indexOf(b[0]));
             const x = x_y.map(d => d[0]);
             const y = x_y.map(d => d[1]);
 
@@ -988,7 +988,7 @@ const App = {
         // group score data by model
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
 
-        let x = thisState.xaxis_tickvals; // this.state.selected_disaggregate_by
+        let x = thisState.xaxis_values; // this.state.selected_disaggregate_by
         let y = Array.from(grouped.keys()); // model_id
         let z = []; // scores on transformed scale (log scale if applicable)
         let z_orig = []; // scores on original scale
@@ -1005,16 +1005,16 @@ const App = {
             const z_orig_unsrt = model_scores.map(d => d[thisState.selected_metric]);
             let x_z = x_unsrt.map((val, i) => [val, z_unsrt[i], z_orig_unsrt[i]]);
 
-            // sort (x, z, z_orig) tuples in order of this.state.xaxis_tickvals
-            x_z.sort((a, b) => thisState.xaxis_tickvals.indexOf(a[0]) - thisState.xaxis_tickvals.indexOf(b[0]));
+            // sort (x, z, z_orig) tuples in order of this.state.xaxis_values
+            x_z.sort((a, b) => thisState.xaxis_values.indexOf(a[0]) - thisState.xaxis_values.indexOf(b[0]));
 
-            // get z values in the order of xaxis_tickvals,
+            // get z values in the order of xaxis_values,
             // including missing values represented as null
-            const model_z = thisState.xaxis_tickvals.map(x_val => {
+            const model_z = thisState.xaxis_values.map(x_val => {
                 const this_x_z_val = x_z.find(d => d[0] === x_val);
                 return this_x_z_val ? this_x_z_val[1] : null;
             });
-            const model_z_orig = thisState.xaxis_tickvals.map(x_val => {
+            const model_z_orig = thisState.xaxis_values.map(x_val => {
                 const this_x_z_val = x_z.find(d => d[0] === x_val);
                 return this_x_z_val ? this_x_z_val[2] : null;
             });
