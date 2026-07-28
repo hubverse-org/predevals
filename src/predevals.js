@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -149,6 +149,7 @@ const App = {
         selected_disaggregate_by: '',
         selected_eval_set: '',
         xaxis_tickvals: [],
+        xaxis_kind: 'category',  // 'date', 'numeric', or 'category'; see `axis_kind()`
         // selected_plot_type: '',
 
         // 2/2 Data used to create tables or plots:
@@ -727,19 +728,29 @@ const App = {
         Plotly.react(plotlyDiv, data, layout);
     },
     setXaxisTickvals() {
-        // set the xaxis_tickvals property of the App state
+        // set the xaxis_tickvals and xaxis_kind properties of the App state
         // used in getPlotlyLayout() and getPlotlyData()
 
-        let all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
+        const all_xaxis_vals = this.state.scores_plot.map(d => d[this.state.selected_disaggregate_by]);
+
+        // get unique values and sort. Values arrive as strings, so the default sort compares them
+        // lexicographically: right for categories, and for ISO dates (which sort chronologically
+        // as text), but wrong for numeric task ids, where it gives -1, -10, -11, ..., 0, 1, 10, 2.
+        //
+        // sort the underlying values rather than their display text, so that a task ID with
+        // human-readable text still orders by what the values mean ('2 weeks ahead' before
+        // '10 weeks ahead') rather than by how the labels happen to spell.
+        const unsorted = [...new Set(all_xaxis_vals)];
+        const sorted = axis_kind(unsorted) === 'numeric'
+            ? unsorted.sort((a, b) => Number(a) - Number(b))
+            : unsorted.sort();
 
         // If x axis is a task ID for which human-readable text was provided, use that text
-        all_xaxis_vals = this.taskIdValuesToText(this.state.selected_disaggregate_by, all_xaxis_vals)
+        const xaxis_tickvals = [...new Set(this.taskIdValuesToText(this.state.selected_disaggregate_by, sorted))];
 
-        // get unique values and sort
-        const xaxis_tickvals_unsorted = [...new Set(all_xaxis_vals)];
-        const xaxis_tickvals = xaxis_tickvals_unsorted.sort();
-
-        // update state
+        // update state. The kind is re-derived from the display text because that is what reaches
+        // Plotly as the trace x values, and so what its axis type has to match.
+        this.state.xaxis_kind = axis_kind(xaxis_tickvals);
         this.state.xaxis_tickvals = xaxis_tickvals;
     },
     getPlotlyLayout() {
@@ -762,12 +773,16 @@ const App = {
                 yanchor: 'top',
             },
             xaxis: {
-                title: {text: this.state.disaggregate_by},
-                // no tickvals/ticktext: setting them forces Plotly to draw one label per unique
-                // value, which is unreadable for axes with many values (e.g. hundreds of dates).
-                // Ordering comes from categoryorder/categoryarray, and trace x values already
-                // hold the human-readable text, so letting Plotly pick ticks loses nothing and
-                // lets it thin them to fit and re-pick them on zoom/resize.
+                title: {text: this.state.selected_disaggregate_by},
+                // no tickvals/ticktext: pinning a label to every unique value is unreadable for
+                // axes with many values (e.g. hundreds of dates). Plotly thins auto ticks to fit
+                // and re-picks them on zoom/resize.
+                //
+                // numeric task ids map to 'category' rather than 'linear' because auto ticks on a
+                // linear axis land between the values that exist, labelling horizons 0.5, 1.5,
+                // 2.5. 'category' is also what makes categoryorder/categoryarray below take
+                // effect — Plotly ignores them on date and linear axes.
+                type: this.state.xaxis_kind === 'date' ? 'date' : 'category',
                 categoryorder: 'array',
                 categoryarray: this.state.xaxis_tickvals,
                 fixedrange: false,

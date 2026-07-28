@@ -178,4 +178,23 @@ function toArray(value) {
     return Array.isArray(value) ? value : [value];
 }
 
-export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, score_col_name_to_text, convertDataColumnTypes, toArray}
+
+/**
+ * Classify x-axis values so that their sort order and their Plotly axis type come from one
+ * decision. Task id values reach the plot as strings (`convertDataColumnTypes()` leaves the
+ * disaggregate_by column alone), so the kind has to be sniffed from the values themselves — the
+ * hub config declares which task ids exist but not what type their values are.
+ *
+ * @param values {Array} - unique x-axis values, as strings
+ * @returns {String} - 'date', 'numeric', or 'category' (the fallback, including for no values)
+ */
+function axis_kind(values) {
+    if (values.length === 0) return 'category';
+    // anchored at both ends: Plotly cannot parse a value that merely starts with a date (e.g. a
+    // task_id_text label like '2025-01-06 (EW02)'), and a date axis it cannot parse renders blank
+    if (values.every(value => /^\d{4}-\d{2}-\d{2}$/.test(value))) return 'date';
+    if (values.every(value => value !== '' && !isNaN(value))) return 'numeric';
+    return 'category';
+}
+
+export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}
