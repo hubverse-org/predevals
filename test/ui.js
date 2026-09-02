@@ -362,3 +362,59 @@ QUnit.module('plot x-axis', (hooks) => {
         assert.equal(App.getPlotlyLayout().xaxis.title.text, 'horizon');
     });
 });
+
+
+//
+// plot y-axis tests
+//
+
+QUnit.module('plot y-axis', (hooks) => {
+    useStubbedApp(hooks);
+
+    // Populate scores_plot with one row per x value, carrying a score for `metric`. The coverage
+    // values here span well inside 0-100, which is what makes an autoranged axis visibly wrong.
+    function setPlotScores(plotType, metric, scores) {
+        App.state.selected_plot_type = plotType;
+        App.state.selected_metric = metric;
+        App.state.selected_disaggregate_by = 'horizon';
+        App.state.scores_plot = scores.map((score, i) => ({
+            model_id: 'model-a',
+            horizon: String(i),
+            [metric]: score,
+        }));
+        App.setXaxisValues();
+    }
+
+    test('getPlotlyLayout() pins the y axis to 0-100 for a coverage metric line plot', assert => {
+        // coverage is read against its nominal level, so the axis has to be the full percentage
+        // domain rather than the range the current selection's data happens to cover (#16)
+        setPlotScores('Line plot', 'interval_coverage_95', [28.5, 76.0, 91.2, 100.0]);
+
+        assert.deepEqual(App.getPlotlyLayout().yaxis.range, [0, 100]);
+    });
+
+    test('getPlotlyLayout() pins 0-100 for any coverage rate', assert => {
+        setPlotScores('Line plot', 'interval_coverage_50', [12.0, 48.0, 55.5]);
+
+        assert.deepEqual(App.getPlotlyLayout().yaxis.range, [0, 100]);
+    });
+
+    test('getPlotlyLayout() leaves the y axis autoranged for non-coverage metrics', assert => {
+        setPlotScores('Line plot', 'wis', [1.5, 20.0, 300.0]);
+
+        assert.strictEqual(App.getPlotlyLayout().yaxis.range, undefined);
+    });
+
+    test('getPlotlyLayout() leaves the heatmap y axis alone, coverage or not', assert => {
+        // the heatmap's y axis is model_id, not the metric, so a 0-100 range would be meaningless
+        setPlotScores('Heatmap', 'interval_coverage_95', [28.5, 76.0, 91.2]);
+
+        assert.strictEqual(App.getPlotlyLayout().yaxis.range, undefined);
+    });
+
+    test('getPlotlyLayout() keeps the coverage y axis zoomable', assert => {
+        setPlotScores('Line plot', 'interval_coverage_95', [28.5, 76.0, 91.2]);
+
+        assert.false(App.getPlotlyLayout().yaxis.fixedrange);
+    });
+});

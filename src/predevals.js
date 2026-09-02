@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -796,6 +796,15 @@ const App = {
         }
         if (this.state.selected_plot_type === 'Line plot') {
             plotly_layout.autosize = true;
+
+            // interval coverage is a percentage on a fixed 0-100 domain, and it's read against the
+            // nominal level (e.g. 95%), so the axis has to be the full domain rather than whatever
+            // the current selection's data happens to span. Other metrics are unbounded and keep
+            // Plotly's autorange. `fixedrange` stays false, so zooming in is still available.
+            if (is_coverage_col(this.state.selected_metric)) {
+                plotly_layout.yaxis.range = [0, 100];
+            }
+
             $('#predeval_plotly_div').css('height', '75vh');
         } else if (this.state.selected_plot_type === 'Heatmap') {
             plotly_layout.width = ('#predeval_plotly_div').width;
@@ -872,8 +881,7 @@ const App = {
     getPlotlyDataHeatmap() {
         console.log('getPlotlyDataHeatmap(): entered');
         const thisState = this.state;
-        const interval_coverage_regex = new RegExp('^interval_coverage_');
-        const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
+        const is_coverage_metric = is_coverage_col(thisState.selected_metric);
         const relative_skill_regex = new RegExp('_scaled_relative_skill$');
         const is_rel_skill_metric = relative_skill_regex.test(base_col_name(thisState.selected_metric));
 
