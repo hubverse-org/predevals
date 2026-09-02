@@ -27,8 +27,7 @@ function get_round_decimals(col_name, values = null) {
     if (relative_skill_regex.test(base_col_name(col_name))) {
         return 2;
     }
-    const interval_coverage_regex = new RegExp('^interval_coverage_');
-    if (!interval_coverage_regex.test(col_name) && values !== null) {
+    if (!is_coverage_col(col_name) && values !== null) {
         return min_decimals_for_values(values);
     }
     return 1;
@@ -98,6 +97,18 @@ function is_n_col(col_name) {
     return col_name === 'n' || col_name.startsWith('n_');
 }
 
+/**
+ * Is `col_name` an `interval_coverage_*` column? These are percentages on a fixed 0–100 domain
+ * (`convertDataColumnTypes()` scales them), which is why they get special handling in rounding,
+ * labelling, and axis ranges.
+ *
+ * @param col_name {String}
+ * @returns {Boolean}
+ */
+function is_coverage_col(col_name) {
+    return /^interval_coverage_/.test(col_name);
+}
+
 const score_col_name_to_text_map = new Map(
     [
         ['model_id', 'Model'],
@@ -121,8 +132,7 @@ function score_col_name_to_text(score_name) {
         // `n` columns (`n` / `n_<output_type>`) all render as `N`.
         return 'N';
     }
-    const interval_coverage_regex = new RegExp('^interval_coverage_');
-    if (interval_coverage_regex.test(score_name)) {
+    if (is_coverage_col(score_name)) {
         // interval_coverage_* are transform-invariant per the
         // predevals-options.json contract, so no `__<label>` variant exists.
         return `${parse_coverage_rate(score_name)}\% Cov.`;
@@ -141,7 +151,6 @@ function score_col_name_to_text(score_name) {
  * @param data {Array} - as returned by _fetchData() - a d3.csv() object
  */
 function convertDataColumnTypes(disaggregateBy, data) {
-    const interval_coverage_regex = new RegExp('^interval_coverage_');
     for (const col_name of data.columns) {
         if (col_name === 'model_id' || col_name === disaggregateBy) {
             // leave model_id and the disaggregate-by column unchanged
@@ -158,7 +167,7 @@ function convertDataColumnTypes(disaggregateBy, data) {
                 data[i][col_name] = parseFloat(data[i][col_name]);
 
                 // If it's an interval coverage column, multiply by 100
-                if (interval_coverage_regex.test(col_name)) {
+                if (is_coverage_col(col_name)) {
                     data[i][col_name] *= 100;
                 }
             }
@@ -197,4 +206,4 @@ function axis_kind(values) {
     return 'category';
 }
 
-export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}
+export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}

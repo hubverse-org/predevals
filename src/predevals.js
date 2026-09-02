@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -796,6 +796,25 @@ const App = {
         }
         if (this.state.selected_plot_type === 'Line plot') {
             plotly_layout.autosize = true;
+
+            // interval coverage is a percentage on a fixed 0-100 domain, and it's read against the
+            // nominal level (e.g. 95%), so the axis has to be the full domain rather than whatever
+            // the current selection's data happens to span. Other metrics are unbounded and keep
+            // Plotly's autorange. `fixedrange` stays false, so zooming in is still available.
+            if (is_coverage_col(this.state.selected_metric)) {
+                plotly_layout.yaxis.range = [0, 100];
+
+                // frame the top and bottom of the plot, so both bounds of the fixed domain are
+                // visible. Gridlines at 0 and 100 land on the plot rectangle's edge, where the
+                // clip takes half their width; the near-white gridline disappears into that while
+                // the dark zeroline survives, leaving a rule at 0 and nothing at 100. Mirroring
+                // the x axis line draws both edges instead, and `zeroline: false` keeps the
+                // zeroline from doubling up with the bottom one.
+                plotly_layout.xaxis.showline = true;
+                plotly_layout.xaxis.mirror = true;
+                plotly_layout.yaxis.zeroline = false;
+            }
+
             $('#predeval_plotly_div').css('height', '75vh');
         } else if (this.state.selected_plot_type === 'Heatmap') {
             plotly_layout.width = ('#predeval_plotly_div').width;
@@ -860,6 +879,13 @@ const App = {
                 mode: 'lines+markers',
                 type: 'scatter',
                 name: model_id,
+
+                // draw markers outside the plot rectangle rather than clipping them to it. A
+                // marker centered on the y-axis range's edge would otherwise render as a half
+                // circle, which the coverage metrics' pinned [0, 100] range makes routine (every
+                // model that achieves 100% coverage sits on the top edge). Autoranged metrics pad
+                // their extremes, so nothing sits on the edge for them and this is a no-op.
+                cliponaxis: false,
                 hovermode: false,
                 hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${metricDecimals}f}<extra></extra>`,
                 opacity: 0.7,
@@ -872,8 +898,7 @@ const App = {
     getPlotlyDataHeatmap() {
         console.log('getPlotlyDataHeatmap(): entered');
         const thisState = this.state;
-        const interval_coverage_regex = new RegExp('^interval_coverage_');
-        const is_coverage_metric = interval_coverage_regex.test(thisState.selected_metric);
+        const is_coverage_metric = is_coverage_col(thisState.selected_metric);
         const relative_skill_regex = new RegExp('_scaled_relative_skill$');
         const is_rel_skill_metric = relative_skill_regex.test(base_col_name(thisState.selected_metric));
 

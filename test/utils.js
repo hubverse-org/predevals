@@ -4,6 +4,7 @@ import {
     get_round_decimals,
     axis_kind,
     hexToRGB,
+    is_coverage_col,
     is_n_col,
     min_decimals_for_values,
     parse_coverage_rate,
@@ -175,6 +176,20 @@ test('does not match metric, model_id, or disaggregate columns', assert => {
     assert.false(is_n_col('interval_coverage_50'));
     assert.false(is_n_col('model_id'));
     assert.false(is_n_col('nowcast'));  // starts with `n` but is neither `n` nor `n_...`
+});
+
+
+QUnit.module('is_coverage_col');
+
+test('matches interval_coverage_* columns only', assert => {
+    assert.true(is_coverage_col('interval_coverage_50'));
+    assert.true(is_coverage_col('interval_coverage_95'));
+
+    assert.false(is_coverage_col('wis'));
+    assert.false(is_coverage_col('wis_scaled_relative_skill'));
+    assert.false(is_coverage_col('n'));
+    assert.false(is_coverage_col('model_id'));
+    assert.false(is_coverage_col('my_interval_coverage_50'));  // not anchored at the start
 });
 
 
