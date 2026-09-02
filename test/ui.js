@@ -417,4 +417,34 @@ QUnit.module('plot y-axis', (hooks) => {
 
         assert.false(App.getPlotlyLayout().yaxis.fixedrange);
     });
+
+    test('getPlotlyLayout() frames both bounds of the coverage domain', assert => {
+        // a gridline at 0 or 100 sits on the plot rectangle's edge and is half clipped, so the
+        // frame is what makes the fixed domain's bounds visible
+        setPlotScores('Line plot', 'interval_coverage_95', [76.0, 100.0]);
+        const layout = App.getPlotlyLayout();
+
+        assert.true(layout.xaxis.showline, 'x axis line drawn');
+        assert.true(layout.xaxis.mirror, 'and mirrored to the top edge');
+        assert.false(layout.yaxis.zeroline, 'zeroline off, so it does not double the bottom line');
+    });
+
+    test('getPlotlyLayout() leaves the frame off for non-coverage metrics', assert => {
+        setPlotScores('Line plot', 'wis', [1.5, 20.0, 300.0]);
+        const layout = App.getPlotlyLayout();
+
+        assert.strictEqual(layout.xaxis.showline, undefined);
+        assert.strictEqual(layout.xaxis.mirror, undefined);
+        assert.strictEqual(layout.yaxis.zeroline, undefined);
+    });
+
+    test('getPlotlyDataLinePlot() lets markers draw outside the plot rectangle', assert => {
+        // the pinned [0, 100] range puts every 100%-coverage marker on the top edge, where the
+        // default clip would cut it to a half circle
+        setPlotScores('Line plot', 'interval_coverage_95', [76.0, 100.0, 100.0]);
+        const traces = App.getPlotlyDataLinePlot();
+
+        assert.true(traces.length > 0, 'traces were built');
+        traces.forEach(trace => assert.false(trace.cliponaxis, `${trace.name} sets cliponaxis`));
+    });
 });

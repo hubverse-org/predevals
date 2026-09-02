@@ -803,6 +803,16 @@ const App = {
             // Plotly's autorange. `fixedrange` stays false, so zooming in is still available.
             if (is_coverage_col(this.state.selected_metric)) {
                 plotly_layout.yaxis.range = [0, 100];
+
+                // frame the top and bottom of the plot, so both bounds of the fixed domain are
+                // visible. Gridlines at 0 and 100 land on the plot rectangle's edge, where the
+                // clip takes half their width; the near-white gridline disappears into that while
+                // the dark zeroline survives, leaving a rule at 0 and nothing at 100. Mirroring
+                // the x axis line draws both edges instead, and `zeroline: false` keeps the
+                // zeroline from doubling up with the bottom one.
+                plotly_layout.xaxis.showline = true;
+                plotly_layout.xaxis.mirror = true;
+                plotly_layout.yaxis.zeroline = false;
             }
 
             $('#predeval_plotly_div').css('height', '75vh');
@@ -869,6 +879,13 @@ const App = {
                 mode: 'lines+markers',
                 type: 'scatter',
                 name: model_id,
+
+                // draw markers outside the plot rectangle rather than clipping them to it. A
+                // marker centered on the y-axis range's edge would otherwise render as a half
+                // circle, which the coverage metrics' pinned [0, 100] range makes routine (every
+                // model that achieves 100% coverage sits on the top edge). Autoranged metrics pad
+                // their extremes, so nothing sits on the edge for them and this is a no-op.
+                cliponaxis: false,
                 hovermode: false,
                 hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${metricDecimals}f}<extra></extra>`,
                 opacity: 0.7,
