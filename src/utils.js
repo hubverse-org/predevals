@@ -23,8 +23,7 @@ function hexToRGB(hex) {
  * @returns {number}
  */
 function get_round_decimals(col_name, values = null) {
-    const relative_skill_regex = new RegExp('_scaled_relative_skill$');
-    if (relative_skill_regex.test(base_col_name(col_name))) {
+    if (is_relative_skill_col(col_name)) {
         return 2;
     }
     if (!is_coverage_col(col_name) && values !== null) {
@@ -107,6 +106,39 @@ function is_n_col(col_name) {
  */
 function is_coverage_col(col_name) {
     return /^interval_coverage_/.test(col_name);
+}
+
+/**
+ * Is `col_name` a `*_scaled_relative_skill` column? These compare a model to the baseline, so they
+ * are centered on 1.0 rather than on 0, which is why they get special handling in rounding, color
+ * scales, and reference lines. Matched against the base metric, so transformed-scale columns
+ * (`wis_scaled_relative_skill__log`) count too.
+ *
+ * @param col_name {String}
+ * @returns {Boolean}
+ */
+function is_relative_skill_col(col_name) {
+    return /_scaled_relative_skill$/.test(base_col_name(col_name));
+}
+
+/**
+ * Return the y value a horizontal reference line should be drawn at for `col_name`, or `null` for
+ * metrics that have no meaningful reference. Interval coverage is read against its nominal level
+ * (a 0-100 percentage, matching the scaling `convertDataColumnTypes()` applies), and relative skill
+ * against the baseline, which is 1.0 by construction - including on a transformed scale, where the
+ * transform is applied to the scores before the pairwise comparison.
+ *
+ * @param col_name {String}
+ * @returns {Number|null}
+ */
+function reference_line_value(col_name) {
+    if (is_coverage_col(col_name)) {
+        return parse_coverage_rate(col_name);
+    }
+    if (is_relative_skill_col(col_name)) {
+        return 1;
+    }
+    return null;
 }
 
 const score_col_name_to_text_map = new Map(
@@ -206,4 +238,4 @@ function axis_kind(values) {
     return 'category';
 }
 
-export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}
+export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, is_relative_skill_col, reference_line_value, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}

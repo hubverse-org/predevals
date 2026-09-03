@@ -6,8 +6,10 @@ import {
     hexToRGB,
     is_coverage_col,
     is_n_col,
+    is_relative_skill_col,
     min_decimals_for_values,
     parse_coverage_rate,
+    reference_line_value,
     score_col_name_to_text,
     split_transformed_col_name,
     titleCase,
@@ -190,6 +192,56 @@ test('matches interval_coverage_* columns only', assert => {
     assert.false(is_coverage_col('n'));
     assert.false(is_coverage_col('model_id'));
     assert.false(is_coverage_col('my_interval_coverage_50'));  // not anchored at the start
+});
+
+
+QUnit.module('is_relative_skill_col');
+
+test('matches *_scaled_relative_skill columns only', assert => {
+    assert.true(is_relative_skill_col('wis_scaled_relative_skill'));
+    assert.true(is_relative_skill_col('ae_median_scaled_relative_skill'));
+    assert.true(is_relative_skill_col('ae_point_scaled_relative_skill'));
+    assert.true(is_relative_skill_col('se_point_scaled_relative_skill'));
+
+    // matched against the base metric, so a transformed-scale column counts
+    assert.true(is_relative_skill_col('wis_scaled_relative_skill__log'));
+
+    assert.false(is_relative_skill_col('wis'));
+    assert.false(is_relative_skill_col('wis__log'));
+    assert.false(is_relative_skill_col('interval_coverage_95'));
+    assert.false(is_relative_skill_col('n'));
+    assert.false(is_relative_skill_col('model_id'));
+
+    // anchored at the end: the suffix has to close the base metric name
+    assert.false(is_relative_skill_col('wis_scaled_relative_skill_pct'));
+});
+
+
+QUnit.module('reference_line_value');
+
+test('coverage metrics reference their nominal level', assert => {
+    // values are 0-100 percentages by the time they reach the plot (convertDataColumnTypes())
+    assert.equal(reference_line_value('interval_coverage_50'), 50);
+    assert.equal(reference_line_value('interval_coverage_95'), 95);
+});
+
+test('relative skill metrics reference the baseline at 1.0', assert => {
+    assert.equal(reference_line_value('wis_scaled_relative_skill'), 1);
+    assert.equal(reference_line_value('ae_median_scaled_relative_skill'), 1);
+    assert.equal(reference_line_value('se_point_scaled_relative_skill'), 1);
+
+    // the transform is applied to the scores before the pairwise comparison, so the baseline is
+    // still exactly 1.0 on a transformed scale
+    assert.equal(reference_line_value('wis_scaled_relative_skill__log'), 1);
+});
+
+test('metrics with no fixed reference get none', assert => {
+    assert.strictEqual(reference_line_value('wis'), null);
+    assert.strictEqual(reference_line_value('wis__log'), null);
+    assert.strictEqual(reference_line_value('ae_median'), null);
+    assert.strictEqual(reference_line_value('log_score'), null);
+    assert.strictEqual(reference_line_value('rps'), null);
+    assert.strictEqual(reference_line_value('n'), null);
 });
 
 
