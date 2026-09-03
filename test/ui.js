@@ -438,6 +438,55 @@ QUnit.module('plot y-axis', (hooks) => {
         assert.strictEqual(layout.yaxis.zeroline, undefined);
     });
 
+    test('getPlotlyLayout() draws a reference line at the nominal coverage level', assert => {
+        // coverage is read against its nominal level, so the plot says where that level is (#17)
+        setPlotScores('Line plot', 'interval_coverage_95', [28.5, 76.0, 91.2]);
+        const shapes = App.getPlotlyLayout().shapes;
+
+        assert.equal(shapes.length, 1, 'one reference line');
+        assert.equal(shapes[0].y0, 95, 'at the nominal level');
+        assert.equal(shapes[0].y1, 95, 'horizontal');
+        assert.equal(shapes[0].xref, 'paper', 'spanning the full width, whatever the x axis type');
+        assert.equal(shapes[0].layer, 'above', 'above the traces, which crowd it');
+        assert.deepEqual(shapes[0].line, {color: '#444444', width: 1.5, dash: 'dash'});
+    });
+
+    test('getPlotlyLayout() draws the coverage reference line at the metric\'s own rate', assert => {
+        setPlotScores('Line plot', 'interval_coverage_50', [12.0, 48.0, 55.5]);
+
+        assert.equal(App.getPlotlyLayout().shapes[0].y0, 50);
+    });
+
+    test('getPlotlyLayout() draws a relative skill reference line at the baseline', assert => {
+        setPlotScores('Line plot', 'wis_scaled_relative_skill', [0.27, 1.0, 2.82]);
+        const shapes = App.getPlotlyLayout().shapes;
+
+        assert.equal(shapes.length, 1, 'one reference line');
+        assert.equal(shapes[0].y0, 1, 'at the baseline');
+    });
+
+    test('getPlotlyLayout() leaves the relative skill y axis autoranged', assert => {
+        // the baseline model sits at exactly 1.0, so the reference line is in range without
+        // pinning it - and pinning would squash the plot when models cluster far from 1.0
+        setPlotScores('Line plot', 'wis_scaled_relative_skill', [0.27, 1.0, 2.82]);
+
+        assert.strictEqual(App.getPlotlyLayout().yaxis.range, undefined);
+    });
+
+    test('getPlotlyLayout() draws no reference line for metrics without one', assert => {
+        setPlotScores('Line plot', 'wis', [1.5, 20.0, 300.0]);
+
+        assert.strictEqual(App.getPlotlyLayout().shapes, undefined);
+    });
+
+    test('getPlotlyLayout() draws no reference line on a heatmap', assert => {
+        // the heatmap's y axis is model_id, so a horizontal line at a metric value is meaningless.
+        // it encodes the reference as the midpoint of its diverging colorscale instead
+        setPlotScores('Heatmap', 'interval_coverage_95', [28.5, 76.0, 91.2]);
+
+        assert.strictEqual(App.getPlotlyLayout().shapes, undefined);
+    });
+
     test('getPlotlyDataLinePlot() lets markers draw outside the plot rectangle', assert => {
         // the pinned [0, 100] range puts every 100%-coverage marker on the top edge, where the
         // default clip would cut it to a half circle

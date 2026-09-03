@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, parse_coverage_rate, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, is_relative_skill_col, parse_coverage_rate, reference_line_value, score_col_name_to_text, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -815,6 +815,22 @@ const App = {
                 plotly_layout.yaxis.zeroline = false;
             }
 
+            // draw a horizontal reference line for metrics that are read against a fixed value:
+            // the nominal level for interval coverage, and the baseline (1.0) for relative skill.
+            // `xref: 'paper'` spans the full plot width whatever the x axis type is, and
+            // `layer: 'above'` keeps the line visible where the traces crowd it - which is the
+            // common case for relative skill, since every model is measured against the baseline.
+            const reference_y = reference_line_value(this.state.selected_metric);
+            if (reference_y !== null) {
+                plotly_layout.shapes = [{
+                    type: 'line',
+                    xref: 'paper', x0: 0, x1: 1,
+                    yref: 'y', y0: reference_y, y1: reference_y,
+                    line: {color: '#444444', width: 1.5, dash: 'dash'},
+                    layer: 'above',
+                }];
+            }
+
             $('#predeval_plotly_div').css('height', '75vh');
         } else if (this.state.selected_plot_type === 'Heatmap') {
             plotly_layout.width = ('#predeval_plotly_div').width;
@@ -899,8 +915,7 @@ const App = {
         console.log('getPlotlyDataHeatmap(): entered');
         const thisState = this.state;
         const is_coverage_metric = is_coverage_col(thisState.selected_metric);
-        const relative_skill_regex = new RegExp('_scaled_relative_skill$');
-        const is_rel_skill_metric = relative_skill_regex.test(base_col_name(thisState.selected_metric));
+        const is_rel_skill_metric = is_relative_skill_col(thisState.selected_metric);
 
         let pd = [];
 
