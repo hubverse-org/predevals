@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, is_relative_skill_col, parse_coverage_rate, reference_line_value, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, is_relative_skill_col, parse_coverage_rate, reference_line_value, render_score, score_col_name_to_text, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -652,12 +652,17 @@ const App = {
                 return {data: columnName, name: columnName};
             } else {
                 // format score columns: relative_skill → 2 dp, interval_coverage → 1 dp,
-                // all others → auto-detected minimum decimals needed (see get_round_decimals).
+                // all others → the decimals that resolve the column's variation (see get_round_decimals).
                 // Note: we only build tables if disaggregate_by is '(None)', so we can assume that all
                 // columns other than model_id and the `n` column(s) are scores
                 const colValues = thisState.scores_table.map(row => row[columnName]);
                 const decimals = get_round_decimals(columnName, colValues);
-                return {data: columnName, name: columnName, render: (d) => d.toFixed(decimals)};
+
+                // only format for display: render_score() can emit '<0.01', which DataTables would
+                // then type-detect as a string and sort lexicographically. Sorting gets the number.
+                const render = (d, type) => (type === 'display' || type === 'filter')
+                    ? render_score(columnName, d, decimals) : d;
+                return {data: columnName, name: columnName, render: render};
             }
         });
         const targetObj = this.getSelectedTargetObj();
@@ -903,7 +908,11 @@ const App = {
                 // their extremes, so nothing sits on the edge for them and this is a no-op.
                 cliponaxis: false,
                 hovermode: false,
-                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{y:.${metricDecimals}f}<extra></extra>`,
+
+                // pre-format rather than let Plotly round, so a hover value and its table cell
+                // always read the same
+                customdata: y.map(v => render_score(thisState.selected_metric, v, metricDecimals)),
+                hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata}<extra></extra>`,
                 opacity: 0.7,
             };
             pd.push(line_data);
@@ -1068,9 +1077,12 @@ const App = {
             x: x,
             y: y,
             z: z,
-            customdata: z_orig,
+
+            // pre-format rather than let Plotly round, so a hover value and its table cell always
+            // read the same
+            customdata: z_orig.map(row => row.map(v => v === null ? null : render_score(thisState.selected_metric, v, metricDecimals))),
             type: 'heatmap',
-            hovertemplate: `${thisState.selected_disaggregate_by}: %{x}<br>model: %{y}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata:.${metricDecimals}f}<extra></extra>`,
+            hovertemplate: `${thisState.selected_disaggregate_by}: %{x}<br>model: %{y}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata}<extra></extra>`,
             hoverongaps: false
         };
 

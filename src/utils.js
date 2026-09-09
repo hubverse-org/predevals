@@ -13,10 +13,9 @@ function hexToRGB(hex) {
  * Return the number of decimal places to use when rendering a score column.
  *
  * - `*_scaled_relative_skill` columns always use 2 decimal places.
- * - `interval_coverage_*` columns always use 1 (values are 0–100 percentages).
- * - All other columns: when `values` is supplied, returns the minimum decimals
- *   needed so that no non-zero value rounds to zero (see `min_decimals_for_values`);
- *   otherwise falls back to 1.
+ * - `interval_coverage_*` columns always use 1 (values are 0-100 percentages).
+ * - All other columns: when `values` is supplied, returns the decimals that resolve the column's
+ *   variation (see `score_decimals`); otherwise falls back to 1.
  *
  * @param {string} col_name
  * @param {Array<number>|null} [values=null]
@@ -27,30 +26,79 @@ function get_round_decimals(col_name, values = null) {
         return 2;
     }
     if (!is_coverage_col(col_name) && values !== null) {
-        return min_decimals_for_values(values);
+        return score_decimals(values);
     }
     return 1;
 }
 
 /**
- * Return the minimum number of decimal places needed so that every non-zero
- * value in `values` renders as non-zero (i.e., doesn't round to "0.000…0").
- * Null, undefined, non-finite, and zero entries are ignored.
- * Returns 1 when the array is empty or contains only zeros/non-finite values.
+ * Decimals for a score column, chosen so the displayed digits resolve the column's variation
+ * ("two effective digits", Ehrenberg 1977, JRSS A 140(3), 277-297), capped so the column never
+ * carries more than `maxSigFigs`. Display only: never applied to sort keys or downloaded data.
+ *
+ * Both anchors are quantiles rather than extremes: the range is set by the worst model, but the
+ * comparison that matters is among the contenders at the top, so neither one blown-up submission
+ * (which would flatten the leaderboard through the cap) nor one near-zero score (which would pad
+ * every other row with spurious decimals) gets to set the whole column's precision.
+ *
+ * Because the rule is decimals-based (`toFixed`) rather than significant-figure-based (R's
+ * `signif`), it never rounds digits left of the decimal point: a national-scale MAE of 12345.6
+ * renders as `12346`, never `12300`. `maxSigFigs` only ever removes decimals, and it bottoms out
+ * at 0.
+ *
+ * Note: depends on the rows currently in `scores_table`, so precision can shift under filtering.
+ * That is inherent to any column-wide rule, and is the price of keeping decimal points aligned.
  *
  * @param {Array<number|null|undefined>} values
+ * @param {Object} [options]
  * @returns {number}
  */
-function min_decimals_for_values(values) {
-    const nonZeroAbs = values
-        .filter(v => v !== null && v !== undefined && isFinite(v) && v !== 0)
-        .map(v => Math.abs(v));
-    if (nonZeroAbs.length === 0) return 1;
-    const minVal = Math.min(...nonZeroAbs);
-    // ceil(-log10(minVal)) = decimal places needed to show 1 significant figure for the smallest value.
-    // Subtract a tiny epsilon before ceil to guard against floating-point overshoot
-    // (e.g. -log10(0.001) can return 2.9999... instead of 3 exactly).
-    return Math.max(1, Math.ceil(-Math.log10(minVal) - 1e-10));
+function score_decimals(values, {effDigits = 2, fallbackSigFigs = 3, maxSigFigs = 5, maxDecimals = 6} = {}) {
+    const vals = values.filter(v => v !== null && v !== undefined && isFinite(v));
+    const nonZeroAbs = vals.filter(v => v !== 0).map(Math.abs);
+    if (nonZeroAbs.length === 0) return 0;
+
+    // epsilon guards floating-point overshoot, e.g. log10(0.001) === -3.0000000000000004
+    const mag = (x) => Math.floor(Math.log10(x) + 1e-10);
+    const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
+    const sorted = [...vals].sort((a, b) => a - b);
+
+    // fall back to the full range when the IQR is degenerate (few rows, or many ties)
+    const spread = (quantile(sorted, 0.75) - quantile(sorted, 0.25)) || (sorted[sorted.length - 1] - sorted[0]);
+    const large = quantile([...nonZeroAbs].sort((a, b) => a - b), 0.75);
+    const d_spread = spread > 0 ? effDigits - 1 - mag(spread)
+                                : fallbackSigFigs - 1 - mag(large);
+    const d_cap = maxSigFigs - 1 - mag(large);
+    return Math.min(Math.max(d_spread, 0), Math.max(d_cap, 0), maxDecimals);
+}
+
+/**
+ * Render one score cell as a string. `decimals` comes from `get_round_decimals()`, computed once
+ * per column so that decimal points line up down the column.
+ *
+ * Values too small to survive the column's rounding render as `<0.01` (or `>-0.01`) rather than as
+ * a bare `0`, which is what keeps a column-wide rule from claiming a real non-zero score is zero.
+ *
+ * @param {string} col_name
+ * @param {number|null|undefined} value
+ * @param {number} decimals
+ * @returns {string}
+ */
+function render_score(col_name, value, decimals) {
+    if (value === null || value === undefined || !isFinite(value)) {
+        return '';
+    }
+    if (is_relative_skill_col(col_name)) {
+        return value.toFixed(2);
+    }
+    if (is_coverage_col(col_name)) {
+        return value.toFixed(1);
+    }
+    const smallest = Math.pow(10, -decimals);
+    if (value !== 0 && Math.abs(value) < smallest / 2) {
+        return (value < 0 ? '>-' : '<') + smallest.toFixed(decimals);
+    }
+    return value.toFixed(decimals);
 }
 
 
@@ -238,4 +286,4 @@ function axis_kind(values) {
     return 'category';
 }
 
-export {titleCase, hexToRGB, min_decimals_for_values, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, is_relative_skill_col, reference_line_value, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}
+export {titleCase, hexToRGB, score_decimals, render_score, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, is_relative_skill_col, reference_line_value, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}
