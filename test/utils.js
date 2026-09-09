@@ -7,10 +7,11 @@ import {
     is_coverage_col,
     is_n_col,
     is_relative_skill_col,
-    min_decimals_for_values,
+    render_score,
     parse_coverage_rate,
     reference_line_value,
     score_col_name_to_text,
+    score_decimals,
     split_transformed_col_name,
     titleCase,
     toArray,
@@ -58,10 +59,10 @@ test('returns 2 for scaled_relative_skill columns', assert => {
     assert.equal(get_round_decimals('mae_scaled_relative_skill__log'), 2);
 });
 
-test('with values: returns min decimals needed for non-coverage, non-skill columns', assert => {
-    assert.equal(get_round_decimals('wis', [0.000925, 0.000759, 0.000805]), 4);
-    assert.equal(get_round_decimals('ae_median', [0.001, 0.002, 0.009]), 3);
-    assert.equal(get_round_decimals('wis', [1.5, 2.3, 47.7]), 1);
+test('with values: defers to score_decimals() for non-coverage, non-skill columns', assert => {
+    assert.equal(get_round_decimals('wis', [0.000925, 0.000759, 0.000805]), 6);
+    assert.equal(get_round_decimals('ae_median', [0.001, 0.002, 0.009]), 4);
+    assert.equal(get_round_decimals('wis', [1.5, 2.3, 47.7]), 2);
 });
 
 test('with values: still returns 2 for scaled_relative_skill regardless of values', assert => {
@@ -75,49 +76,125 @@ test('with values: still returns 1 for interval_coverage columns (values are 0-1
 });
 
 
-QUnit.module('min_decimals_for_values');
+QUnit.module('score_decimals');
 
-test('returns 1 for empty, all-zero, or all-non-finite values', assert => {
-    assert.equal(min_decimals_for_values([]), 1);
-    assert.equal(min_decimals_for_values([0, 0, 0]), 1);
-    assert.equal(min_decimals_for_values([null, undefined]), 1);
-    assert.equal(min_decimals_for_values([Infinity, -Infinity]), 1);
+// The issue-88 regression case: flusight-dashboard `wis__log`, all 58 models. Every value sits in
+// [0.19, 1.27], so the old min-anchored rule cleared its "nothing rounds to zero" bar at one
+// decimal and rendered 21 of these 58 rows as the same "0.3".
+const WIS_LOG_VALUES = [
+    0.194580477360387, 0.42445635328479, 0.264657716265282, 0.343356886197072,
+    0.305843546429542, 0.361738462099056, 0.460338093431164, 0.440443041113521,
+    0.450465100085903, 0.565428319467, 0.265444756757736, 0.309846277585966,
+    0.530184444278452, 0.327864650476597, 0.333704559479011, 0.311450841561445,
+    0.322866070572885, 0.405768484358752, 0.431702079297883, 0.296765334110182,
+    0.305707952027994, 0.690585048746816, 0.486658116642048, 0.575326737297091,
+    0.581587036665746, 0.645718348925459, 0.704006487669316, 0.312369466300412,
+    0.344182455268459, 0.415489242163702, 0.422157834149336, 0.381696816546922,
+    0.404151084284733, 0.322012575547464, 0.345297308828633, 0.428431249029247,
+    0.472023154530456, 0.311225672203621, 0.305893179663906, 0.392204368133479,
+    0.384833937936552, 0.530086715037455, 0.643205272486554, 0.398985751470517,
+    0.393277225697538, 0.30886209898577, 0.33910087296964, 1.27387287336059,
+    0.482863143449645, 0.563085931347079, 0.465941529854746, 0.314563493121172,
+    0.52361022830072, 0.459469976679847, 0.597800361636446, 0.408775489527314,
+    0.296166723330344, 0.500871388446773,
+];
+
+test('returns 0 when there is nothing non-zero to resolve', assert => {
+    assert.equal(score_decimals([]), 0);
+    assert.equal(score_decimals([0, 0, 0]), 0);
+    assert.equal(score_decimals([null, undefined]), 0);
+    assert.equal(score_decimals([Infinity, -Infinity]), 0);
 });
 
-test('returns 1 for values >= 0.1', assert => {
-    assert.equal(min_decimals_for_values([1.5, 2.3, 47.7]), 1);
-    assert.equal(min_decimals_for_values([0.1, 0.5, 0.9]), 1);
+test('resolves the flusight `wis__log` column past one decimal (issue #88)', assert => {
+    assert.equal(score_decimals(WIS_LOG_VALUES), 2, 'IQR of 0.161 resolves at 2 decimals');
 });
 
-test('returns 2 for values in [0.01, 0.1)', assert => {
-    assert.equal(min_decimals_for_values([0.05, 0.08]), 2);
-    assert.equal(min_decimals_for_values([0.01, 0.09]), 2);
+test('whole-number-scale columns drop to 0 decimals', assert => {
+    // national-scale MAE: every integer digit is kept, only the decimal place goes. A
+    // significant-figure rule (R's signif) would render these as 1250, 12300 - this one does not
+    const national = [1247.3, 1583.9, 2104.6, 2890.2, 3312.8, 4501.7, 5120.4, 8842.1, 12345.6, 15678.9];
+    assert.equal(score_decimals(national), 0);
+    assert.equal(render_score('ae_median', 12345.6, 0), '12346');
 });
 
-test('returns 3 for values in [0.001, 0.01)', assert => {
-    assert.equal(min_decimals_for_values([0.005, 0.008]), 3);
-    assert.equal(min_decimals_for_values([0.001, 0.009]), 3);
+test('falls back to the range, then to sig figs, as the IQR degenerates', assert => {
+    assert.equal(score_decimals([42.7]), 1, 'single value: 3 sig figs');
+    assert.equal(score_decimals([5, 5, 5]), 2, 'all identical: IQR and range both zero');
 });
 
-test('returns 4 for covidhub-style WIS values (~0.0005-0.0014)', assert => {
-    // real data: document.predevals.state.scores_table wis column
-    const wisValues = [0.000925048661683814, 0.00075907107176393, 0.000804968609706757,
-        0.00138310730984419, 0.00143697666395866, 0.00055223613252158, 0.000892415568463205];
-    assert.equal(min_decimals_for_values(wisValues), 4);
+test('one high outlier does not flatten the column', assert => {
+    // the cap is anchored on Q3, not the max: anchoring on the max would give d_cap = 0 here and
+    // render the nine rows that matter as "0", "1", "1", ...
+    const withOutlier = [0.42, 0.55, 0.61, 0.73, 0.88, 1.02, 1.19, 1.41, 2.05, 52000];
+    assert.equal(score_decimals(withOutlier), 2);
+    assert.equal(render_score('wis', 0.42, 2), '0.42');
 });
 
-test('is driven by the smallest non-zero absolute value in the array', assert => {
-    assert.equal(min_decimals_for_values([100, 1.5, 0.001]), 3);
+test('one low outlier does not pad the column with decimals', assert => {
+    // min-anchoring - the old rule, and the `minSigFigs` floor considered on #88 - would force
+    // decimals here to keep 0.05 visible, giving "183.70" and "392.80"
+    const withOutlier = [0.05, 183.7, 220.4, 250.9, 290.7, 312.5, 392.8];
+    assert.equal(score_decimals(withOutlier), 0);
+    assert.equal(render_score('wis', 183.7, 0), '184');
 });
 
-test('handles negative values by taking absolute value', assert => {
-    assert.equal(min_decimals_for_values([-0.005, -0.008]), 3);
-    assert.equal(min_decimals_for_values([-1.5, 0.5]), 1);
+test('guards floating-point overshoot at exact powers of ten', assert => {
+    // log10(0.001) is -3.0000000000000004, which would floor to -4 without the epsilon
+    assert.equal(score_decimals([0.001, 0.002, 0.009]), 4);
 });
 
-test('filters out null, undefined, and non-finite values', assert => {
-    assert.equal(min_decimals_for_values([null, undefined, Infinity, -Infinity, 0, 0.5]), 1);
-    assert.equal(min_decimals_for_values([null, 0.005]), 3);
+test('respects maxDecimals', assert => {
+    assert.equal(score_decimals([0.000925, 0.000759, 0.000805]), 6, 'jointly binding with the spread');
+    assert.equal(score_decimals([0.000925, 0.000759, 0.000805], {maxDecimals: 4}), 4);
+});
+
+test('ignores null, undefined, and non-finite entries', assert => {
+    assert.equal(score_decimals([null, undefined, Infinity, -Infinity, 1.5, 2.3, 47.7]),
+        score_decimals([1.5, 2.3, 47.7]));
+});
+
+test('counts zeros as observations when measuring the spread', assert => {
+    // a zero is a real score, so it belongs in the column's distribution even though it can't
+    // anchor a magnitude. Only the magnitude anchors skip it
+    assert.equal(score_decimals([0, 1.5, 2.3, 47.7]), 1, 'the zero widens the IQR');
+    assert.equal(score_decimals([1.5, 2.3, 47.7]), 2);
+});
+
+
+QUnit.module('render_score');
+
+test('distinguishes `wis__log` values that all rendered as "0.3" (issue #88)', assert => {
+    const decimals = score_decimals(WIS_LOG_VALUES);
+
+    // the three rows visible in the issue screenshot
+    assert.equal(render_score('wis__log', 0.265444756757736, decimals), '0.27');
+    assert.equal(render_score('wis__log', 0.305843546429542, decimals), '0.31');
+    assert.equal(render_score('wis__log', 0.296765334110182, decimals), '0.30');
+
+    const rendered = WIS_LOG_VALUES.map(v => render_score('wis__log', v, decimals));
+    assert.equal(WIS_LOG_VALUES.filter(v => v.toFixed(1) === '0.3').length, 21, 'rows the old rule flattened');
+    assert.equal(new Set(rendered).size, 34, 'distinct strings, up from 7 under the old rule');
+});
+
+test('overrides the column decimals for skill and coverage columns', assert => {
+    assert.equal(render_score('wis_scaled_relative_skill', 0.798407240258868, 0), '0.80');
+    assert.equal(render_score('interval_coverage_50', 52.884615384615394, 0), '52.9');
+});
+
+test('flags values too small to survive the column rounding', assert => {
+    assert.equal(render_score('wis', 0.0001, 2), '<0.01');
+    assert.equal(render_score('wis', -0.0001, 2), '>-0.01');
+    assert.equal(render_score('wis', 0.05, 0), '<1');
+    assert.equal(render_score('wis', 0.005, 2), '0.01', 'rounds up rather than flagging');
+    assert.equal(render_score('wis', 0, 2), '0.00', 'a true zero is not flagged');
+});
+
+test('renders missing and non-finite values as empty', assert => {
+    assert.equal(render_score('wis', null, 2), '');
+    assert.equal(render_score('wis', undefined, 2), '');
+    assert.equal(render_score('wis', Infinity, 2), '');
+    assert.equal(render_score('wis', NaN, 2), '');
 });
 
 
