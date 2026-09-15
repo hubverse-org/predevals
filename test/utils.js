@@ -46,7 +46,16 @@ test('hexToRGB() handles 6-char hex', assert => {
 
 QUnit.module('get_round_decimals');
 
+// `get_round_decimals()` is the per-column entry point the scores table calls once per column. It
+// answers one question: does this column get a fixed decimal count, independent of the values, or
+// should its precision be measured from the values in it? Relative skill (always 2 decimals) and
+// coverage (always 1; the values are 0-100 percentages) are fixed. Every other metric column is
+// measured, by `score_decimals()` below.
+
 test('returns 1 for plain metric columns (no values)', assert => {
+    // Case: a caller has the column name but not the column's values.
+    // Desired: fall back to the fixed 1 decimal that predates issue #88. With no values in hand
+    // there is no variation to measure, so the historical default stands.
     assert.equal(get_round_decimals('wis'), 1);
     assert.equal(get_round_decimals('mae'), 1);
     assert.equal(get_round_decimals('wis__log'), 1);
@@ -54,29 +63,71 @@ test('returns 1 for plain metric columns (no values)', assert => {
 });
 
 test('returns 2 for scaled_relative_skill columns', assert => {
+    // Case: a relative skill column, whose values are ratios centered on the 1.0 baseline.
+    // Desired: always 2 decimals. The scale is fixed and known in advance, and "1.05 vs 0.98" is
+    // the comparison readers make, so this column does not want the measured rule.
     assert.equal(get_round_decimals('wis_scaled_relative_skill'), 2);
     assert.equal(get_round_decimals('mae_scaled_relative_skill'), 2);
     assert.equal(get_round_decimals('mae_scaled_relative_skill__log'), 2);
 });
 
 test('with values: defers to score_decimals() for non-coverage, non-skill columns', assert => {
+    // Case: an ordinary metric column with its values in hand - the normal scores-table path.
+    // Desired: hand off to score_decimals(), so the decimals track each column's own variation. A
+    // covidhub-scale WIS column needs 6 decimals; a column spanning 1.5 to 47.7 needs 2.
     assert.equal(get_round_decimals('wis', [0.000925, 0.000759, 0.000805]), 6);
     assert.equal(get_round_decimals('ae_median', [0.001, 0.002, 0.009]), 4);
     assert.equal(get_round_decimals('wis', [1.5, 2.3, 47.7]), 2);
 });
 
 test('with values: still returns 2 for scaled_relative_skill regardless of values', assert => {
+    // Case: a relative skill column whose values the measured rule would read very differently -
+    // near-zero ratios, or ratios in the hundreds.
+    // Desired: the fixed 2 still wins. This column's decimal count does not depend on its values
+    // at all, so a filtered-down set of rows can never change its width.
     assert.equal(get_round_decimals('wis_scaled_relative_skill', [0.000925, 0.000759]), 2);
     assert.equal(get_round_decimals('mae_scaled_relative_skill', [100, 200]), 2);
 });
 
 test('with values: still returns 1 for interval_coverage columns (values are 0-100)', assert => {
+    // Case: a coverage column. convertDataColumnTypes() has already rescaled it to 0-100, so
+    // the values are percentages; the 0-1 values in the second assertion are a shape that should
+    // never reach here.
+    // Desired: the fixed 1 decimal wins either way. "52.9" is the readable form of a coverage
+    // rate, and the measured rule would otherwise pad the column out on odd inputs.
     assert.equal(get_round_decimals('interval_coverage_50', [47.7, 93.3]), 1);
     assert.equal(get_round_decimals('interval_coverage_95', [0.001, 0.0005]), 1);
 });
 
 
 QUnit.module('score_decimals');
+
+// WHAT `score_decimals()` IS FOR, AND WHAT THE TESTS BELOW ASSERT
+//
+// It picks ONE decimal count for an entire score column, so every cell in the column prints with
+// the same number of decimal places and the decimal points line up. The desired behavior, which
+// the tests in this module pin down one rule at a time:
+//
+// 1. Resolve the comparison between models, not the precision of any single score. The reader's
+//    question is "how do these models rank against each other", so the column carries enough
+//    decimals to show roughly two digits of the SPREAD among the models. A column whose models all
+//    sit between 0.19 and 1.27 has to separate them (2 decimals); a column whose models sit
+//    between 1247 and 15679 does not need a decimal place at all (0).
+// 2. Measure that spread between quantiles (Q1 to Q3), never between min and max, so that one
+//    blown-up model cannot flatten the leaderboard and one near-zero model cannot pad every other
+//    row with spurious decimals. The significant-figure cap is anchored on Q3 for the same reason.
+// 3. Never round to the left of the decimal point. This is a decimals rule (`toFixed`), not a
+//    significant-figures rule (R's `signif`, the alternative weighed on issue #88): a
+//    national-scale MAE of 12345.6 prints as "12346", never as "12300".
+// 4. Degrade in rungs rather than off a cliff when the IQR is zero (too few rows, or many tied
+//    rows): widen Q1-Q3 to P10-P90, then to the full range, and only then fall back to 3
+//    significant figures of a typical value. Each rung gives up a little outlier resistance, in
+//    order, so the resistant answer is always tried first.
+//
+// One consequence to keep in mind while reading the expected numbers below: because the decimals
+// are set by the spread, they can be one more than it takes to merely tell adjacent rows apart. A
+// spread of 0.02 asks for 3 decimals, since two digits of that spread is "0.020" - not the 2
+// decimals that distinguishing 0.50 from 0.52 would need on its own.
 
 // The issue-88 regression case: flusight-dashboard `wis__log`, all 58 models. Every value sits in
 // [0.19, 1.27], so the old min-anchored rule cleared its "nothing rounds to zero" bar at one
@@ -100,6 +151,11 @@ const WIS_LOG_VALUES = [
 ];
 
 test('returns 0 when there is nothing non-zero to resolve', assert => {
+    // Case: a column with no non-zero finite value in it at all - no rows survived the
+    // filters, or every score is zero, missing, or infinite.
+    // Desired: 0 decimals. There is no magnitude to anchor on, so any decimal count would be
+    // invented. 0 prints these cells as a plain "0" instead of implying a precision (0.00) that
+    // nothing in the data supports.
     assert.equal(score_decimals([]), 0);
     assert.equal(score_decimals([0, 0, 0]), 0);
     assert.equal(score_decimals([null, undefined]), 0);
@@ -107,59 +163,92 @@ test('returns 0 when there is nothing non-zero to resolve', assert => {
 });
 
 test('resolves the flusight `wis__log` column past one decimal (issue #88)', assert => {
+    // Case: the bug report itself. 58 flusight models, every wis__log score between 0.19 and
+    // 1.27, with a Q1-Q3 spread of 0.161.
+    // Desired: 2 decimals, so neighboring models stay distinguishable. The old rule asked only
+    // "does any value round to zero at this width", cleared that bar at 1 decimal, and printed 21
+    // of the 58 models as the identical string "0.3".
     assert.equal(score_decimals(WIS_LOG_VALUES), 2, 'IQR of 0.161 resolves at 2 decimals');
 });
 
 test('whole-number-scale columns drop to 0 decimals', assert => {
-    // national-scale MAE: every integer digit is kept, only the decimal place goes. A
-    // significant-figure rule (R's signif) would render these as 1250, 12300 - this one does not
+    // Case: a national-scale MAE column - values in the thousands, spread (Q1-Q3) about 3000.
+    // Desired: 0 decimals. A tenth of a case is noise at this scale, so the decimal place goes -
+    // but every integer digit stays, which is rule 3 above. R's signif() would have rendered these
+    // as 1250 and 12300, discarding real information; a decimals rule cannot do that.
     const national = [1247.3, 1583.9, 2104.6, 2890.2, 3312.8, 4501.7, 5120.4, 8842.1, 12345.6, 15678.9];
     assert.equal(score_decimals(national), 0);
     assert.equal(render_score('ae_median', 12345.6, 0), '12346');
 });
 
 test('widens the quantile window, then falls back to sig figs, as the IQR degenerates', assert => {
+    // Case: columns with no measurable spread anywhere - a single row, or every row tied. No
+    // comparison is being made, so there is nothing for rule 1 to resolve.
+    // Desired: the last rung, 3 significant figures of a typical value, which is a reasonable
+    // default for a number about which nothing else is known: 42.7 keeps its tenth, and 5 prints
+    // as "5.00".
     assert.equal(score_decimals([42.7]), 1, 'single value: 3 sig figs');
     assert.equal(score_decimals([5, 5, 5]), 2, 'all identical: every window is zero-width');
 });
 
 test('a tie-heavy column is not handed back to its outlier', assert => {
-    // the IQR is zero here, so the window widens to P10-P90 rather than dropping to the full
-    // range. Going straight to the range would let the 52000 set the precision and render the
-    // nine rows that matter as "1" nine times over - the issue-88 failure, one fallback later
+    // Case: nine models effectively tied around 0.5 (one of them at 0.52) and one model that
+    // blew up at 52000. Q1 and Q3 are both 0.5, so the IQR is zero and the rule has to widen.
+    // Desired: 3 decimals, measured from the P10-P90 spread of 0.02, so the tied models stay
+    // legible as "0.500" and "0.520". That is one decimal more than telling 0.50 from 0.52 needs:
+    // the rule shows two digits of the spread itself ("0.020"), per rule 1 above.
+    // Why P10-P90 and not the full range: the range here is 52000, which yields 0 decimals and
+    // prints the nine models that matter as "1" nine times over - exactly the issue-88 failure,
+    // one fallback rung later.
     const tied = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.52, 52000];
     assert.equal(score_decimals(tied), 3);
     assert.equal(render_score('wis', 0.5, 3), '0.500');
     assert.equal(render_score('wis', 0.52, 3), '0.520');
 
-    // tied past P10-P90 too: nothing left to measure, so the range is the last rung
+    // Case: tied past P10-P90 as well, so even the widened window measures nothing.
+    // Desired: fall to the next rung, the full range, which is the last thing left to measure. It
+    // gives 0 decimals here, which is also the right answer for a column that really is nine 1s
+    // and one 1000.
     assert.equal(score_decimals([1, 1, 1, 1, 1, 1, 1, 1, 1, 1000]), 0);
 });
 
 test('one high outlier does not flatten the column', assert => {
-    // the cap is anchored on Q3, not the max: anchoring on the max would give d_cap = 0 here and
-    // render the nine rows that matter as "0", "1", "1", ...
+    // Case: an ordinary leaderboard (0.42 to 2.05) with one model that blew up at 52000 - the
+    // common real-world shape, and the one rule 2 exists for.
+    // Desired: 2 decimals, set by the contenders. Both anchors ignore the outlier: the spread is
+    // Q1-Q3 (0.58), and the significant-figure cap is anchored on Q3 (1.19). Anchoring the cap on
+    // the max instead would give 0 decimals and print the nine models that matter as "0", "1",
+    // "1", ...
     const withOutlier = [0.42, 0.55, 0.61, 0.73, 0.88, 1.02, 1.19, 1.41, 2.05, 52000];
     assert.equal(score_decimals(withOutlier), 2);
     assert.equal(render_score('wis', 0.42, 2), '0.42');
 });
 
 test('one low outlier does not pad the column with decimals', assert => {
-    // min-anchoring - the old rule, and the `minSigFigs` floor considered on #88 - would force
-    // decimals here to keep 0.05 visible, giving "183.70" and "392.80"
+    // Case: the mirror image - a column in the hundreds with one model scoring 0.05.
+    // Desired: 0 decimals, again set by the contenders (Q1-Q3 is 107). Min-anchoring - the old
+    // rule, and the `minSigFigs` floor weighed on issue #88 - would keep 0.05 visible by giving
+    // every other row two decimals it cannot support: "183.70", "392.80". The 0.05 row instead
+    // renders as "<1" (see render_score below), which is how the column stays honest about that
+    // model without taxing all the others.
     const withOutlier = [0.05, 183.7, 220.4, 250.9, 290.7, 312.5, 392.8];
     assert.equal(score_decimals(withOutlier), 0);
     assert.equal(render_score('wis', 183.7, 0), '184');
 });
 
 test('guards floating-point overshoot at exact powers of ten', assert => {
-    // log10(0.001) is -3.0000000000000004, which would floor to -4 without the epsilon
+    // Case: a spread that lands on an exact power of ten (0.002 - 0.001 = 0.001).
+    // Desired: 4 decimals. This is a numerical guard rather than a display policy: log10(0.001)
+    // evaluates to -3.0000000000000004, which floors to -4 and would hand the column a spurious
+    // fifth decimal were it not for the epsilon in mag().
     assert.equal(score_decimals([0.001, 0.002, 0.009]), 4);
 });
 
 test('resolves the covidhub tiny-WIS column (issue #48 fixture)', assert => {
-    // real data: document.predevals.state.scores_table wis column. The old min-anchored rule gave
-    // 4 decimals, which flattened 0.000805 and 0.000759 onto the same "0.0008"
+    // Case: real covidhub data - an entire WIS column down at 1e-3, spread 1.7e-4.
+    // Desired: enough decimals that no two models collapse onto the same string, which for this
+    // column is 5. The Set assertion at the end is the requirement; the 5 is just what meets it.
+    // The old min-anchored rule stopped at 4 and printed both 0.000805 and 0.000759 as "0.0008".
     const wisValues = [0.000925048661683814, 0.00075907107176393, 0.000804968609706757,
         0.00138310730984419, 0.00143697666395866, 0.00055223613252158, 0.000892415568463205];
     assert.equal(score_decimals(wisValues), 5);
@@ -171,18 +260,28 @@ test('resolves the covidhub tiny-WIS column (issue #48 fixture)', assert => {
 });
 
 test('respects maxDecimals', assert => {
+    // Case: a column so tightly spread (4.6e-5) that resolving it asks for more decimals than
+    // a table cell can usefully show.
+    // Desired: the measured spread governs until it reaches maxDecimals (6 by default), and then
+    // maxDecimals governs. It is a hard ceiling on the column's width, not a suggestion.
     assert.equal(score_decimals([0.000925, 0.000759, 0.000805]), 6, 'jointly binding with the spread');
     assert.equal(score_decimals([0.000925, 0.000759, 0.000805], {maxDecimals: 4}), 4);
 });
 
 test('ignores null, undefined, and non-finite entries', assert => {
+    // Case: a column with holes - models missing a score for this target, or an infinite one.
+    // Desired: those entries take no part in the decision. The column's width is exactly what the
+    // finite values alone would have produced.
     assert.equal(score_decimals([null, undefined, Infinity, -Infinity, 1.5, 2.3, 47.7]),
         score_decimals([1.5, 2.3, 47.7]));
 });
 
 test('counts zeros as observations when measuring the spread', assert => {
-    // a zero is a real score, so it belongs in the column's distribution even though it can't
-    // anchor a magnitude. Only the magnitude anchors skip it
+    // Case: a column holding a genuine 0.0 score alongside ordinary values.
+    // Desired: the zero counts as a row when measuring the spread - it widens Q1-Q3 from 0.8 to
+    // 2.3 here, which takes the column from 2 decimals down to 1 - but it is skipped when picking
+    // the typical magnitude for the significant-figure cap, since log10(0) is not a magnitude. A
+    // zero is a real score and belongs in the column's distribution; it just cannot anchor one.
     assert.equal(score_decimals([0, 1.5, 2.3, 47.7]), 1, 'the zero widens the IQR');
     assert.equal(score_decimals([1.5, 2.3, 47.7]), 2);
 });
@@ -190,7 +289,16 @@ test('counts zeros as observations when measuring the spread', assert => {
 
 QUnit.module('render_score');
 
+// `render_score()` turns one value into the string for one cell, given the decimals that
+// get_round_decimals() chose for the whole column. Its three jobs, one per test below: apply the
+// fixed decimal counts for skill and coverage columns; never let the column-wide rounding claim
+// that a real non-zero score is zero (the "<0.01" form); and render absent data as an empty cell.
+
 test('distinguishes `wis__log` values that all rendered as "0.3" (issue #88)', assert => {
+    // Case: the issue-88 column once more, this time end to end - decimals from score_decimals(),
+    // strings from render_score().
+    // Desired: the three rows visible in the issue screenshot print as three different numbers,
+    // and the column as a whole resolves into 34 distinct strings where the old rule produced 7.
     const decimals = score_decimals(WIS_LOG_VALUES);
 
     // the three rows visible in the issue screenshot
@@ -204,11 +312,21 @@ test('distinguishes `wis__log` values that all rendered as "0.3" (issue #88)', a
 });
 
 test('overrides the column decimals for skill and coverage columns', assert => {
+    // Case: a caller passes decimals of 0 for a skill or coverage column.
+    // Desired: render_score() ignores the argument and applies the fixed decimal count anyway - 2
+    // for skill, 1 for coverage. These columns are pinned here as well as in get_round_decimals(),
+    // so no caller can accidentally unpin them.
     assert.equal(render_score('wis_scaled_relative_skill', 0.798407240258868, 0), '0.80');
     assert.equal(render_score('interval_coverage_50', 52.884615384615394, 0), '52.9');
 });
 
 test('flags values too small to survive the column rounding', assert => {
+    // Case: a column rounded to 2 decimals contains a score of 0.0001 - a real, non-zero
+    // result that toFixed(2) would print as "0.00".
+    // Desired: "<0.01" instead, so the reader sees "smaller than this column can show" rather than
+    // a claim that the model scored zero. This is what makes the outlier-resistant anchors safe: a
+    // low outlier loses its digits but not its meaning. A value that rounds up to a visible digit
+    // prints normally, and a true zero is not flagged, because it really is zero.
     assert.equal(render_score('wis', 0.0001, 2), '<0.01');
     assert.equal(render_score('wis', -0.0001, 2), '>-0.01');
     assert.equal(render_score('wis', 0.05, 0), '<1');
@@ -217,6 +335,9 @@ test('flags values too small to survive the column rounding', assert => {
 });
 
 test('renders missing and non-finite values as empty', assert => {
+    // Case: a model with no score for this cell, or a non-finite one.
+    // Desired: an empty cell. "NaN" or "Infinity" sitting in a leaderboard reads as if it were a
+    // scoring result.
     assert.equal(render_score('wis', null, 2), '');
     assert.equal(render_score('wis', undefined, 2), '');
     assert.equal(render_score('wis', Infinity, 2), '');

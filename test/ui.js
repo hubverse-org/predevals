@@ -274,6 +274,12 @@ QUnit.module('scores table headers', (hooks) => {
 // scores table cell rendering tests
 //
 
+// These tests cover the whole per-column path the scores table takes: read the column's values ->
+// pick one decimal count for the column (get_round_decimals()) -> turn each value into a cell
+// string (render_score()). test/utils.js pins down the two functions in isolation; what is asserted
+// here is that updateTable() actually wires them together, on the DataTables column config, with
+// the column's real values rather than the fixed 1 decimal that predates issue #88.
+
 QUnit.module('scores table cell rendering', (hooks) => {
     useStubbedApp(hooks);
     const dtConfig = stubDataTable(hooks);
@@ -302,6 +308,11 @@ QUnit.module('scores table cell rendering', (hooks) => {
     const renderFor = (columnName) => dtConfig().columns.find((c) => c.name === columnName).render;
 
     test('renders score cells at the decimals that resolve the column (issue #88)', assert => {
+        // Case: the table is handed the flusight `wis__log` column, whose values all sit
+        // between 0.19 and 1.27.
+        // Desired: the cells come back at the 2 decimals that separate these models. Rendering at
+        // the old fixed 1 decimal would print all three of these rows as "0.3", which is the
+        // screenshot in issue #88.
         App.state.scores_table = tableWith({wis__log: WIS_LOG_ROWS});
         App.updateTable();
 
@@ -312,8 +323,12 @@ QUnit.module('scores table cell rendering', (hooks) => {
     });
 
     test('hands DataTables the raw number for sorting', assert => {
-        // render() runs for every DataTables type, and '<0.01' in a sort key would silently switch
-        // the column to lexicographic ordering
+        // Case: DataTables calls the same render() for every data type it needs, not just for
+        // display - 'sort' and 'type' among them.
+        // Desired: only 'display' and 'filter' get the rounded string. Sorting and type detection
+        // get the untouched number, so the column orders by value; a string such as '<0.01' in a
+        // sort key would silently switch the whole column to lexicographic ordering. 'filter' gets
+        // the string on purpose, so that a search matches what the reader can actually see.
         App.state.scores_table = tableWith({wis__log: WIS_LOG_ROWS});
         App.updateTable();
 
@@ -324,6 +339,11 @@ QUnit.module('scores table cell rendering', (hooks) => {
     });
 
     test('renders whole-number-scale columns without a decimal place', assert => {
+        // Case: an ae_median column in the tens-to-hundreds, spread wide enough that a tenth
+        // of a case carries no information.
+        // Desired: whole numbers, and every integer digit kept - "291", not "290.7" and not the
+        // "290" that a significant-figures rule would produce. The decimal count is per column, so
+        // this and the wis__log column above coexist in one table at different widths.
         App.state.scores_table = tableWith({ae_median: [290.690197703552, 101.287927350427, 76.9, 498.2, 11.3]});
         App.updateTable();
 
