@@ -46,6 +46,12 @@ function get_round_decimals(col_name, values = null) {
  * renders as `12346`, never `12300`. `maxSigFigs` only ever removes decimals, and it bottoms out
  * at 0.
  *
+ * Note: `maxSigFigs` is applied as a hard minimum against the spread, so it wins where the two
+ * disagree. Above ~1e4 that can flatten neighbors the spread would have resolved: [12345.1,
+ * 12345.2] wants 1 decimal and gets 0. The loss is the sixth significant figure rather than the
+ * first, which is the trade the cap is there to make; raise `maxSigFigs` if a hub's scores live at
+ * that scale and the distinction matters.
+ *
  * Note: depends on the rows currently in `scores_table`, so precision can shift under filtering.
  * That is inherent to any column-wide rule, and is the price of keeping decimal points aligned.
  *
@@ -63,8 +69,13 @@ function score_decimals(values, {effDigits = 2, fallbackSigFigs = 3, maxSigFigs 
     const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
     const sorted = [...vals].sort((a, b) => a - b);
 
-    // fall back to the full range when the IQR is degenerate (few rows, or many ties)
-    const spread = (quantile(sorted, 0.75) - quantile(sorted, 0.25)) || (sorted[sorted.length - 1] - sorted[0]);
+    // Widen the window in rungs when the IQR is degenerate (few rows, or many ties). Going straight
+    // from the IQR to the full range would hand the column back to the outliers the IQR anchoring
+    // exists to keep out: eight tied 0.5s next to one 52000 would render as "1" nine times over,
+    // which is the very failure this function was written to fix. The full range is still the last
+    // rung, but by then the column is tied from P10 to P90 and there is nothing else left to measure.
+    const spread_between = (lo, hi) => quantile(sorted, hi) - quantile(sorted, lo);
+    const spread = spread_between(0.25, 0.75) || spread_between(0.10, 0.90) || spread_between(0, 1);
     const large = quantile([...nonZeroAbs].sort((a, b) => a - b), 0.75);
     const d_spread = spread > 0 ? effDigits - 1 - mag(spread)
                                 : fallbackSigFigs - 1 - mag(large);

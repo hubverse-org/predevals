@@ -118,9 +118,22 @@ test('whole-number-scale columns drop to 0 decimals', assert => {
     assert.equal(render_score('ae_median', 12345.6, 0), '12346');
 });
 
-test('falls back to the range, then to sig figs, as the IQR degenerates', assert => {
+test('widens the quantile window, then falls back to sig figs, as the IQR degenerates', assert => {
     assert.equal(score_decimals([42.7]), 1, 'single value: 3 sig figs');
-    assert.equal(score_decimals([5, 5, 5]), 2, 'all identical: IQR and range both zero');
+    assert.equal(score_decimals([5, 5, 5]), 2, 'all identical: every window is zero-width');
+});
+
+test('a tie-heavy column is not handed back to its outlier', assert => {
+    // the IQR is zero here, so the window widens to P10-P90 rather than dropping to the full
+    // range. Going straight to the range would let the 52000 set the precision and render the
+    // nine rows that matter as "1" nine times over - the issue-88 failure, one fallback later
+    const tied = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.52, 52000];
+    assert.equal(score_decimals(tied), 3);
+    assert.equal(render_score('wis', 0.5, 3), '0.500');
+    assert.equal(render_score('wis', 0.52, 3), '0.520');
+
+    // tied past P10-P90 too: nothing left to measure, so the range is the last rung
+    assert.equal(score_decimals([1, 1, 1, 1, 1, 1, 1, 1, 1, 1000]), 0);
 });
 
 test('one high outlier does not flatten the column', assert => {
@@ -142,6 +155,19 @@ test('one low outlier does not pad the column with decimals', assert => {
 test('guards floating-point overshoot at exact powers of ten', assert => {
     // log10(0.001) is -3.0000000000000004, which would floor to -4 without the epsilon
     assert.equal(score_decimals([0.001, 0.002, 0.009]), 4);
+});
+
+test('resolves the covidhub tiny-WIS column (issue #48 fixture)', assert => {
+    // real data: document.predevals.state.scores_table wis column. The old min-anchored rule gave
+    // 4 decimals, which flattened 0.000805 and 0.000759 onto the same "0.0008"
+    const wisValues = [0.000925048661683814, 0.00075907107176393, 0.000804968609706757,
+        0.00138310730984419, 0.00143697666395866, 0.00055223613252158, 0.000892415568463205];
+    assert.equal(score_decimals(wisValues), 5);
+
+    const rendered = wisValues.map(v => render_score('wis', v, 5));
+    assert.deepEqual(rendered,
+        ['0.00093', '0.00076', '0.00080', '0.00138', '0.00144', '0.00055', '0.00089']);
+    assert.equal(new Set(rendered).size, wisValues.length, 'no two rows collapse onto one string');
 });
 
 test('respects maxDecimals', assert => {

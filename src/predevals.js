@@ -909,8 +909,11 @@ const App = {
                 cliponaxis: false,
                 hovermode: false,
 
-                // pre-format rather than let Plotly round, so a hover value and its table cell
-                // always read the same
+                // pre-format through render_score() rather than let Plotly round, so hover goes
+                // through the same rule as every other score display -- including its '<0.01'
+                // floor and its '' for a missing score, where `%{y:.Nf}` rendered a bare 'NaN'.
+                // (The table's own decimals come from the non-disaggregated `scores_table`, so
+                // while disaggregation is on the two panes can still differ in decimals.)
                 customdata: y.map(v => render_score(thisState.selected_metric, v, metricDecimals)),
                 hovertemplate: `model: %{data.name}<br>${thisState.selected_disaggregate_by}: %{x}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata}<extra></extra>`,
                 opacity: 0.7,
@@ -1078,8 +1081,8 @@ const App = {
             y: y,
             z: z,
 
-            // pre-format rather than let Plotly round, so a hover value and its table cell always
-            // read the same
+            // pre-format through render_score() rather than let Plotly round, so hover goes through
+            // the same rule as every other score display (see the line plot's note on this)
             customdata: z_orig.map(row => row.map(v => v === null ? null : render_score(thisState.selected_metric, v, metricDecimals))),
             type: 'heatmap',
             hovertemplate: `${thisState.selected_disaggregate_by}: %{x}<br>model: %{y}<br>${score_col_name_to_text(this.state.selected_metric)}: %{customdata}<extra></extra>`,
