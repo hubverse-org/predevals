@@ -65,6 +65,30 @@ function useStubbedApp(hooks) {
     });
 }
 
+// DataTables isn't loaded in the jsdom test env; stub the pieces updateTable() touches so the
+// <thead> is still assembled (that DOM is built before the DataTable() hand-off). Returns a getter
+// for the config updateTable() handed over, which is where the column render functions live.
+function stubDataTable(hooks) {
+    let originalDataTable;
+    let capturedConfig;
+    hooks.beforeEach(() => {
+        originalDataTable = $.fn.DataTable;
+        capturedConfig = null;
+        const DataTableStub = function (config) {
+            capturedConfig = config;
+            return {destroy() {}};
+        };
+        DataTableStub.isDataTable = function () {
+            return false;
+        };
+        $.fn.DataTable = DataTableStub;
+    });
+    hooks.afterEach(() => {
+        $.fn.DataTable = originalDataTable;
+    });
+    return () => capturedConfig;
+}
+
 // A scores_table stand-in carrying only the `.columns` property the render paths read.
 function scoresWithColumns(columns) {
     const scores = [];
@@ -215,23 +239,7 @@ QUnit.module('metric definitions glossary', (hooks) => {
 
 QUnit.module('scores table headers', (hooks) => {
     useStubbedApp(hooks);
-
-    // DataTables isn't loaded in the jsdom test env; stub the pieces updateTable() touches so the
-    // <thead> is still assembled (that DOM is built before the DataTable() hand-off).
-    let originalDataTable;
-    hooks.beforeEach(() => {
-        originalDataTable = $.fn.DataTable;
-        const DataTableStub = function () {
-            return {destroy() {}};
-        };
-        DataTableStub.isDataTable = function () {
-            return false;
-        };
-        $.fn.DataTable = DataTableStub;
-    });
-    hooks.afterEach(() => {
-        $.fn.DataTable = originalDataTable;
-    });
+    stubDataTable(hooks);
 
     const headerTexts = () => textsOf('#predeval_table thead th');
 
@@ -261,6 +269,89 @@ QUnit.module('scores table headers', (hooks) => {
     });
 });
 
+
+//
+// scores table cell rendering tests
+//
+
+// These tests cover the whole per-column path the scores table takes: read the column's values ->
+// pick one decimal count for the column (get_round_decimals()) -> turn each value into a cell
+// string (render_score()). test/utils.js pins down the two functions in isolation; what is asserted
+// here is that updateTable() actually wires them together, on the DataTables column config, with
+// the column's real values rather than the fixed 1 decimal that predates issue #88.
+
+QUnit.module('scores table cell rendering', (hooks) => {
+    useStubbedApp(hooks);
+    const dtConfig = stubDataTable(hooks);
+
+    // the flusight `wis__log` column from issue #88, trimmed to the rows that make the point: under
+    // the old min-anchored rule every one of these rendered as "0.3"
+    const WIS_LOG_ROWS = [0.265444756757736, 0.305843546429542, 0.296765334110182, 0.194580477360387,
+        0.42445635328479, 0.690585048746816, 1.27387287336059, 0.343356886197072];
+
+    // Build a scores_table of real rows (not the header-only `scoresWithColumns` stand-in) so the
+    // column-values → decimals → cell-string path runs for real.
+    function tableWith(columnValues) {
+        const columns = ['model_id', ...Object.keys(columnValues)];
+        const nRows = Object.values(columnValues)[0].length;
+        const scores = Array.from({length: nRows}, (_, i) => {
+            const row = {model_id: `model-${i}`};
+            for (const [col, values] of Object.entries(columnValues)) {
+                row[col] = values[i];
+            }
+            return row;
+        });
+        scores.columns = columns;
+        return scores;
+    }
+
+    const renderFor = (columnName) => dtConfig().columns.find((c) => c.name === columnName).render;
+
+    test('renders score cells at the decimals that resolve the column (issue #88)', assert => {
+        // Case: the table is handed the flusight `wis__log` column, whose values all sit
+        // between 0.19 and 1.27.
+        // Desired: the cells come back at the 2 decimals that separate these models. Rendering at
+        // the old fixed 1 decimal would print all three of these rows as "0.3", which is the
+        // screenshot in issue #88.
+        App.state.scores_table = tableWith({wis__log: WIS_LOG_ROWS});
+        App.updateTable();
+
+        const render = renderFor('wis__log');
+        assert.equal(render(0.265444756757736, 'display'), '0.27');
+        assert.equal(render(0.305843546429542, 'display'), '0.31');
+        assert.equal(render(0.296765334110182, 'display'), '0.30');
+    });
+
+    test('hands DataTables the raw number for sorting', assert => {
+        // Case: DataTables calls the same render() for every data type it needs, not just for
+        // display - 'sort' and 'type' among them.
+        // Desired: only 'display' and 'filter' get the rounded string. Sorting and type detection
+        // get the untouched number, so the column orders by value; a string such as '<0.01' in a
+        // sort key would silently switch the whole column to lexicographic ordering. 'filter' gets
+        // the string on purpose, so that a search matches what the reader can actually see.
+        App.state.scores_table = tableWith({wis__log: WIS_LOG_ROWS});
+        App.updateTable();
+
+        const render = renderFor('wis__log');
+        assert.strictEqual(render(0.305843546429542, 'sort'), 0.305843546429542);
+        assert.strictEqual(render(0.305843546429542, 'type'), 0.305843546429542);
+        assert.equal(render(0.305843546429542, 'filter'), '0.31', 'search matches what is displayed');
+    });
+
+    test('renders whole-number-scale columns without a decimal place', assert => {
+        // Case: an ae_median column in the tens-to-hundreds, spread wide enough that a tenth
+        // of a case carries no information.
+        // Desired: whole numbers, and every integer digit kept - "291", not "290.7" and not the
+        // "290" that a significant-figures rule would produce. The decimal count is per column, so
+        // this and the wis__log column above coexist in one table at different widths.
+        App.state.scores_table = tableWith({ae_median: [290.690197703552, 101.287927350427, 76.9, 498.2, 11.3]});
+        App.updateTable();
+
+        const render = renderFor('ae_median');
+        assert.equal(render(290.690197703552, 'display'), '291');
+        assert.equal(render(11.3, 'display'), '11');
+    });
+});
 
 //
 // plot x-axis tests

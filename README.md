@@ -1,6 +1,10 @@
 # predevals
 A JavaScript module for interactive exploration of forecast evaluations.
 
+## Score rounding
+
+Each score column in the table gets one number of decimal places, chosen from the values in that column so the decimal points line up. The rule is: measure the spread of the middle half of the column (its interquartile range) and use just enough decimals to show that spread to two digits. A column whose models fall between 0.19 and 1.27 gets 2 decimals (`0.27`, `0.31`, `0.30`); one whose models fall between 1247 and 15679 gets none (`1247`, `15679`). Two guards sit on top: no column shows more than 5 significant figures, and rounding never touches digits left of the decimal point, so 12345.6 displays as `12346`, never `12300`. Using the middle half rather than the smallest and largest values is what keeps one blown-up model from flattening the whole column and one near-zero model from padding every other row with meaningless decimals; a value too small to show at the column's width displays as less than the smallest value that width can show -- `<0.01` in a 2-decimal column, `<0.0001` in a 4-decimal one -- rather than as `0`. Relative skill columns always use 2 decimals and coverage columns 1, since those scales are known in advance. Rounding is display-only: sorting and downloaded data always use the full values.
+
 # Development
 
 ## Installing dev requirements
