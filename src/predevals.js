@@ -3,7 +3,7 @@
  */
 
 import * as d3 from "d3";
-import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, hexToRGB, is_coverage_col, is_n_col, is_relative_skill_col, parse_coverage_rate, reference_line_value, render_score, score_col_name_to_text, toArray} from "./utils.js";
+import {axis_kind, base_col_name, convertDataColumnTypes, get_round_decimals, heatmap_sort_label, hexToRGB, is_coverage_col, is_n_col, is_relative_skill_col, parse_coverage_rate, reference_line_value, render_score, score_col_name_to_text, sort_models_by_score, toArray} from "./utils.js";
 import {nDefinition, metricDefinitions} from "./metric-definitions.js";
 
 
@@ -767,7 +767,9 @@ const App = {
         if (this.state.selected_plot_type === 'Line plot') {
             yaxis_title = score_col_name_to_text(this.state.selected_metric);
         } else if (this.state.selected_plot_type === 'Heatmap') {
-            yaxis_title = null;
+            // say how getPlotlyDataHeatmap() sorted the rows. Without overall scores the rows fall
+            // back to model_id order, which the label would misdescribe
+            yaxis_title = this.state.scores_table.length > 0 ? heatmap_sort_label(this.state.selected_metric) : null;
         }
         let plotly_layout = {
             autosize: true,
@@ -839,6 +841,10 @@ const App = {
             $('#predeval_plotly_div').css('height', '75vh');
         } else if (this.state.selected_plot_type === 'Heatmap') {
             plotly_layout.width = ('#predeval_plotly_div').width;
+
+            // Plotly draws a heatmap's first row at the bottom. Reverse the axis so the best model,
+            // which getPlotlyDataHeatmap() puts first, is at the top
+            plotly_layout.yaxis.autorange = 'reversed';
 
             // set height of plotly div based on number of models
             // 20 px per model, plus 40 px for title and x-axis label
@@ -1041,12 +1047,14 @@ const App = {
         const grouped = d3.group(thisState.scores_plot, d => d.model_id);
 
         let x = thisState.xaxis_values; // this.state.selected_disaggregate_by
-        let y = Array.from(grouped.keys()); // model_id
+        // model_id, best overall score first
+        let y = sort_models_by_score(Array.from(grouped.keys()), thisState.scores_table, thisState.selected_metric);
         let z = []; // scores on transformed scale (log scale if applicable)
         let z_orig = []; // scores on original scale
 
-        // add a heatmap row for scores for each model
-        for (const [model_id, model_scores] of grouped) {
+        // add a heatmap row for scores for each model, in the order of y
+        for (const model_id of y) {
+            const model_scores = grouped.get(model_id);
             // get x and z pairs, not sorted
             let x_unsrt = model_scores.map(d => d[thisState.selected_disaggregate_by]);
 

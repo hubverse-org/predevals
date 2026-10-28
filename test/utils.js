@@ -2,6 +2,7 @@ import {
     base_col_name,
     convertDataColumnTypes,
     get_round_decimals,
+    heatmap_sort_label,
     axis_kind,
     hexToRGB,
     is_coverage_col,
@@ -12,6 +13,7 @@ import {
     reference_line_value,
     score_col_name_to_text,
     score_decimals,
+    sort_models_by_score,
     split_transformed_col_name,
     titleCase,
     toArray,
@@ -469,6 +471,87 @@ test('metrics with no fixed reference get none', assert => {
 });
 
 
+QUnit.module('sort_models_by_score');
+
+test('lowest first for a proper score', assert => {
+    const scores_table = [
+        {model_id: 'a', wis: 30},
+        {model_id: 'b', wis: 10},
+        {model_id: 'c', wis: 20},
+    ];
+    assert.deepEqual(sort_models_by_score(['a', 'b', 'c'], scores_table, 'wis'), ['b', 'c', 'a']);
+});
+
+test('lowest first for relative skill, including transformed-scale columns', assert => {
+    const scores_table = [
+        {model_id: 'a', wis_scaled_relative_skill: 1.2, wis_scaled_relative_skill__log: 0.9},
+        {model_id: 'b', wis_scaled_relative_skill: 0.8, wis_scaled_relative_skill__log: 1.1},
+        {model_id: 'baseline', wis_scaled_relative_skill: 1, wis_scaled_relative_skill__log: 1},
+    ];
+    const model_ids = ['a', 'b', 'baseline'];
+    assert.deepEqual(sort_models_by_score(model_ids, scores_table, 'wis_scaled_relative_skill'), ['b', 'baseline', 'a']);
+    assert.deepEqual(sort_models_by_score(model_ids, scores_table, 'wis_scaled_relative_skill__log'), ['a', 'baseline', 'b']);
+});
+
+test('closest to the nominal level first for interval coverage', assert => {
+    const scores_table = [
+        {model_id: 'a', interval_coverage_50: 40, interval_coverage_95: 99},
+        {model_id: 'b', interval_coverage_50: 52, interval_coverage_95: 93},
+        {model_id: 'c', interval_coverage_50: 70, interval_coverage_95: 80},
+    ];
+    const model_ids = ['a', 'b', 'c'];
+    assert.deepEqual(sort_models_by_score(model_ids, scores_table, 'interval_coverage_95'), ['b', 'a', 'c']);
+    assert.deepEqual(sort_models_by_score(model_ids, scores_table, 'interval_coverage_50'), ['b', 'a', 'c']);
+});
+
+test('breaks ties by model_id, including equal distances either side of nominal', assert => {
+    assert.deepEqual(
+        sort_models_by_score(['c', 'a', 'b'], [
+            {model_id: 'a', wis: 10},
+            {model_id: 'b', wis: 5},
+            {model_id: 'c', wis: 10},
+        ], 'wis'),
+        ['b', 'a', 'c']);
+    assert.deepEqual(
+        sort_models_by_score(['z', 'y'], [
+            {model_id: 'y', interval_coverage_95: 97},
+            {model_id: 'z', interval_coverage_95: 93},
+        ], 'interval_coverage_95'),
+        ['y', 'z']);
+});
+
+test('coverage ties survive the float noise of scaling to percent', assert => {
+    // 0.55 * 100 is 55.00000000000001, so without rounding 'z' (45%) would beat 'y' (55%)
+    const scores_table = [
+        {model_id: 'y', interval_coverage_50: '0.55'},
+        {model_id: 'z', interval_coverage_50: '0.45'},
+    ];
+    scores_table.columns = ['model_id', 'interval_coverage_50'];
+    convertDataColumnTypes(null, scores_table);
+    assert.deepEqual(sort_models_by_score(['z', 'y'], scores_table, 'interval_coverage_50'), ['y', 'z']);
+});
+
+test('models with no overall score go last, by model_id', assert => {
+    const scores_table = [
+        {model_id: 'a', wis: 30},
+        {model_id: 'b', wis: NaN},
+        {model_id: 'c', wis: 20},
+        {model_id: 'd', wis: null},
+    ];
+    assert.deepEqual(sort_models_by_score(['e', 'd', 'c', 'b', 'a'], scores_table, 'wis'), ['c', 'a', 'b', 'd', 'e']);
+});
+
+test('an empty scores_table gives model_id order', assert => {
+    assert.deepEqual(sort_models_by_score(['c', 'a', 'b'], [], 'wis'), ['a', 'b', 'c']);
+});
+
+test('does not modify model_ids', assert => {
+    const model_ids = ['b', 'a'];
+    sort_models_by_score(model_ids, [{model_id: 'a', wis: 1}, {model_id: 'b', wis: 2}], 'wis');
+    assert.deepEqual(model_ids, ['b', 'a']);
+});
+
+
 QUnit.module('score_col_name_to_text');
 
 test('renders scored-count columns (n / n_<output_type>) as N', assert => {
@@ -486,6 +569,19 @@ test('renders metrics, relative skill, and coverage columns', assert => {
 
 test('renders transformed-scale columns with the label in parentheses', assert => {
     assert.equal(score_col_name_to_text('wis__log'), 'WIS (log)');
+});
+
+
+QUnit.module('heatmap_sort_label');
+
+test('lowest at top for non-coverage metrics', assert => {
+    assert.equal(heatmap_sort_label('wis'), 'Sorted by overall WIS (lowest at top)');
+    assert.equal(heatmap_sort_label('wis__log'), 'Sorted by overall WIS (log) (lowest at top)');
+    assert.equal(heatmap_sort_label('wis_scaled_relative_skill'), 'Sorted by overall Rel. WIS (lowest at top)');
+});
+
+test('closest to nominal at top for interval coverage', assert => {
+    assert.equal(heatmap_sort_label('interval_coverage_95'), 'Sorted by overall 95% Cov. (closest to 95% at top)');
 });
 
 
