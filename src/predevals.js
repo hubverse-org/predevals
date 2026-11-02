@@ -846,6 +846,11 @@ const App = {
             // which getPlotlyDataHeatmap() puts first, is at the top
             plotly_layout.yaxis.autorange = 'reversed';
 
+            // without a standoff, Plotly only moves the title past the tick labels it overlaps, so
+            // with few models it clears the middle label but not longer ones above or below it. A
+            // standoff measures from the widest label on the whole axis
+            plotly_layout.yaxis.title.standoff = 10;
+
             // set height of plotly div based on number of models
             // 20 px per model, plus 40 px for title and x-axis label
             // this computation is somewhat arbitrary because it's not
