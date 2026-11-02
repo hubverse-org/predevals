@@ -200,6 +200,45 @@ function reference_line_value(col_name) {
     return null;
 }
 
+/**
+ * Order `model_ids` best first by each model's overall score for `metric`, as found in
+ * `scores_table` (the scores not disaggregated by any task id). Lower is better for every metric
+ * except interval coverage, where the best value is the one closest to the nominal level, so
+ * coverage is ordered by distance from it. Ties are broken by model_id. Models with no row in
+ * `scores_table`, or a missing/NaN score, go last, by model_id. An empty `scores_table` gives
+ * model_id order.
+ *
+ * @param model_ids {Array<String>}
+ * @param scores_table {Array<Object>} - rows with a `model_id` and a `metric` column, after
+ *     `convertDataColumnTypes()`
+ * @param metric {String} - a score column name
+ * @returns {Array<String>} - a new array; `model_ids` is not modified
+ */
+function sort_models_by_score(model_ids, scores_table, metric) {
+    const nominal = is_coverage_col(metric) ? parse_coverage_rate(metric) : null;
+    const sort_keys = new Map();
+    for (const row of scores_table) {
+        const value = row[metric];
+        if (typeof value === 'number' && !Number.isNaN(value)) {
+            // round the coverage distance: convertDataColumnTypes()'s scaling adds float noise
+            // (0.55 * 100 is 55.00000000000001), which would otherwise decide ties
+            sort_keys.set(row.model_id, nominal === null ? value : Math.round(Math.abs(value - nominal) * 1e9) / 1e9);
+        }
+    }
+    const by_name = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    return [...model_ids].sort((a, b) => {
+        const has_a = sort_keys.has(a);
+        const has_b = sort_keys.has(b);
+        if (has_a && has_b) {
+            return (sort_keys.get(a) - sort_keys.get(b)) || by_name(a, b);
+        }
+        if (has_a !== has_b) {
+            return has_a ? -1 : 1;
+        }
+        return by_name(a, b);
+    });
+}
+
 const score_col_name_to_text_map = new Map(
     [
         ['model_id', 'Model'],
@@ -232,6 +271,18 @@ function score_col_name_to_text(score_name) {
     const base = split ? split.base : score_name;
     const baseText = score_col_name_to_text_map.get(base) || titleCase(base);
     return split ? `${baseText} (${split.label})` : baseText;
+}
+
+/**
+ * Text that tells the user how `sort_models_by_score()` ordered the heatmap's rows for `metric`.
+ * Used as the heatmap's y-axis title, so it's also in screenshots and downloaded images.
+ *
+ * @param metric {String} - a score column name
+ * @returns {String}
+ */
+function heatmap_sort_label(metric) {
+    const best = is_coverage_col(metric) ? `closest to ${parse_coverage_rate(metric)}% at top` : 'lowest at top';
+    return `Sorted by overall ${score_col_name_to_text(metric)} (${best})`;
 }
 
 /**
@@ -297,4 +348,4 @@ function axis_kind(values) {
     return 'category';
 }
 
-export {titleCase, hexToRGB, score_decimals, render_score, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, is_relative_skill_col, reference_line_value, score_col_name_to_text, convertDataColumnTypes, toArray, axis_kind}
+export {titleCase, hexToRGB, score_decimals, render_score, get_round_decimals, parse_coverage_rate, split_transformed_col_name, base_col_name, is_n_col, is_coverage_col, is_relative_skill_col, reference_line_value, sort_models_by_score, score_col_name_to_text, heatmap_sort_label, convertDataColumnTypes, toArray, axis_kind}
